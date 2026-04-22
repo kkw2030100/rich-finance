@@ -68,15 +68,15 @@ export function MarketDetail() {
         <div className="space-y-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
           <p>
             <strong style={{ color: 'var(--accent-blue)' }}>거시 환경:</strong> 한국은행이 금리 인하를 시작하면서 유동성이 확대되고 있습니다.
-            역사적으로 금리 인하 초기에는 가치주와 성장주 모두에게 기회가 됩니다. (서재형의 투자 교실)
+            역사적으로 금리 인하 초기에는 가치주와 성장주 모두에게 기회가 됩니다.
           </p>
           <p>
             <strong style={{ color: 'var(--accent-purple)' }}>계절성:</strong> 현재 4월은 핼러윈 효과의 천국 구간(11~4월)에 해당합니다.
-            다만 5월부터는 지옥 구간 진입이므로 포지션 관리에 주의가 필요합니다. (나는 달력만 보고 주식투자한다)
+            다만 5월부터는 지옥 구간 진입이므로 포지션 관리에 주의가 필요합니다.
           </p>
           <p>
             <strong style={{ color: 'var(--accent-yellow)' }}>전략:</strong> 시장 위험도가 &apos;보통&apos; 수준이므로 저평가 종목 위주로 선별 접근하되,
-            추격 매수보다는 분할 매수가 안전합니다. &quot;딴딴한 투자를 해야 돈을 번다.&quot; (인생 마지막에 쓰는 주식투자 교과서)
+            추격 매수보다는 분할 매수가 안전합니다.
           </p>
         </div>
       </div>

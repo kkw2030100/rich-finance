@@ -7,7 +7,7 @@ export function SeasonalityCard() {
   const month = now.getMonth() + 1;
   const yearEnd = now.getFullYear() % 10;
 
-  // 월별 계절성 (강환국)
+  // 월별 계절성
   const isHeaven = month >= 11 || month <= 4;
   const monthLabel = isHeaven ? '천국 구간 (11~4월)' : '지옥 구간 (5~10월)';
   const monthScore = isHeaven ? 4 : (month === 7 ? 2 : (month >= 8 && month <= 9 ? -2 : 0));
