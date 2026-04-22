@@ -2,6 +2,7 @@ import { MarketRiskCard } from '@/components/home/MarketRiskCard';
 import { TopPicks } from '@/components/home/TopPicks';
 import { SectorOverview } from '@/components/home/SectorOverview';
 import { SeasonalityCard } from '@/components/home/SeasonalityCard';
+import { FavoriteStocks } from '@/components/home/FavoriteStocks';
 
 export default function HomePage() {
   return (
@@ -22,6 +23,11 @@ export default function HomePage() {
           <MarketRiskCard />
         </div>
         <SeasonalityCard />
+      </div>
+
+      {/* Favorites */}
+      <div className="mb-6">
+        <FavoriteStocks />
       </div>
 
       {/* Top Picks */}

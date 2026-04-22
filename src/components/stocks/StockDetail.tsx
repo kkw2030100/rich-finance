@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, Target, AlertTriangle, XCircle, BarChart3, TrendingUp, DollarSign, Activity } from 'lucide-react';
 import { Stock } from '@/types/stock';
 import { getVerdictLabel, getVerdictColor, formatNumber, formatPercent, marketRisk, getRiskLabel, getRiskColor } from '@/data/mock-stocks';
+import { useFavorites } from '@/lib/useFavorites';
+import { FavoriteButton } from '@/components/common/FavoriteButton';
 
 function ScoreBreakdown({ stock }: { stock: Stock }) {
   const layers = [
@@ -33,6 +35,7 @@ function ScoreBreakdown({ stock }: { stock: Stock }) {
 }
 
 export function StockDetail({ stock }: { stock: Stock }) {
+  const { toggle, isFavorite } = useFavorites();
   const vColor = getVerdictColor(stock.verdict.verdict);
   const isUp = stock.priceChange >= 0;
   const riskColor = getRiskColor(marketRisk.level);
@@ -71,6 +74,11 @@ export function StockDetail({ stock }: { stock: Stock }) {
         <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-3 mb-1">
+              <FavoriteButton
+                active={isFavorite(stock.ticker)}
+                onClick={(e) => { e.stopPropagation(); toggle(stock.ticker); }}
+                size={20}
+              />
               <h1 className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>{stock.name}</h1>
               <span className="verdict-badge text-base" style={{ background: `${vColor}18`, color: vColor }}>
                 {getVerdictLabel(stock.verdict.verdict)}

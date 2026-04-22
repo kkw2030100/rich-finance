@@ -2,17 +2,22 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUpRight, ArrowDownRight, AlertOctagon } from 'lucide-react';
+import { ArrowUpDown, ArrowUpRight, ArrowDownRight, AlertOctagon, Star } from 'lucide-react';
 import { mockStocks, getVerdictLabel, getVerdictColor, formatNumber, formatPercent } from '@/data/mock-stocks';
+import { useFavorites } from '@/lib/useFavorites';
+import { FavoriteButton } from '@/components/common/FavoriteButton';
 
 type SortKey = 'score' | 'undervalue' | 'netIncomeGrowth' | 'marketCap' | 'per' | 'roe';
 
 export function StockTable() {
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [filterMarket, setFilterMarket] = useState<string>('ALL');
+  const [showFavOnly, setShowFavOnly] = useState(false);
+  const { toggle, isFavorite, favorites } = useFavorites();
 
   const filtered = mockStocks.filter(s => {
     if (filterMarket !== 'ALL' && s.market !== filterMarket) return false;
+    if (showFavOnly && !favorites.includes(s.ticker)) return false;
     return true;
   });
 
@@ -51,15 +56,29 @@ export function StockTable() {
             {m === 'ALL' ? '전체' : m}
           </button>
         ))}
+
+        <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
+
+        <button onClick={() => setShowFavOnly(!showFavOnly)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+          style={{
+            background: showFavOnly ? 'rgba(250,204,21,0.15)' : 'var(--bg-card)',
+            color: showFavOnly ? '#facc15' : 'var(--text-secondary)',
+            border: '1px solid var(--border)',
+          }}>
+          <Star size={12} fill={showFavOnly ? '#facc15' : 'none'} stroke={showFavOnly ? '#facc15' : 'currentColor'} />
+          관심종목{favorites.length > 0 && ` (${favorites.length})`}
+        </button>
       </div>
 
       {/* Table */}
       <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[950px]">
             <thead>
               <tr style={{ background: 'var(--bg-secondary)' }}>
-                <th className="text-left px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
+                <th className="w-8 px-2 py-2.5" />
+                <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
                 <th className="px-3 py-2.5"><SortBtn label="점수" sk="score" /></th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="저평가지수" sk="undervalue" /></th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="순이익증감" sk="netIncomeGrowth" /></th>
@@ -72,10 +91,16 @@ export function StockTable() {
             <tbody>
               {sorted.map((stock, i) => {
                 const vColor = getVerdictColor(stock.verdict.verdict);
-                const isUp = stock.priceChange >= 0;
                 return (
                   <tr key={stock.ticker} className="card-hover" style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3 text-center">
+                      <FavoriteButton
+                        active={isFavorite(stock.ticker)}
+                        onClick={(e) => { e.stopPropagation(); toggle(stock.ticker); }}
+                        size={14}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
                       <Link href={`/stocks/${stock.ticker}`} className="block">
                         <div className="flex items-center gap-2">
                           {stock.killZone && <AlertOctagon size={14} style={{ color: 'var(--accent-red)' }} />}
