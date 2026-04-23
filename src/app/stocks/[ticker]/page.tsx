@@ -1,14 +1,8 @@
-import { mockStocks } from '@/data/mock-stocks';
-import { StockDetail } from '@/components/stocks/StockDetail';
-import { notFound } from 'next/navigation';
+import { StockDetailLive } from '@/components/stocks/StockDetailLive';
 
-export function generateStaticParams() {
-  return mockStocks.map(s => ({ ticker: s.ticker }));
-}
+export const dynamic = 'force-dynamic';
 
 export default async function StockDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
-  const stock = mockStocks.find(s => s.ticker === ticker);
-  if (!stock) notFound();
-  return <StockDetail stock={stock} />;
+  return <StockDetailLive code={ticker} />;
 }
