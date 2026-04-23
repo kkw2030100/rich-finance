@@ -3,6 +3,40 @@ import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+// PBR/ROE/부채비율 실시간 계산 (DART 기반 폴백)
+function calcRealtimeMetrics(db: ReturnType<typeof getDb>, code: string, marketCap: number) {
+  const dart = db.prepare(`
+    SELECT total_assets, total_liabilities, total_equity, year
+    FROM dart_financials
+    WHERE code = ? AND total_equity IS NOT NULL AND total_equity > 0
+    ORDER BY year DESC LIMIT 1
+  `).get(code) as { total_assets: number; total_liabilities: number; total_equity: number; year: number } | undefined;
+
+  if (!dart || !dart.total_equity || dart.total_equity <= 0) return null;
+
+  const equity = dart.total_equity;  // 원 단위
+  const mcapWon = marketCap * 100000000;  // 억원 → 원
+
+  // PBR = 시총 / 자본
+  const pbr = mcapWon > 0 ? Math.round(mcapWon / equity * 100) / 100 : null;
+
+  // ROE = TTM 순이익 / 자본
+  const ttmQuarters = db.prepare(`
+    SELECT net_income FROM financials
+    WHERE code = ? AND period_type = 'quarter' AND net_income IS NOT NULL
+    ORDER BY period DESC LIMIT 4
+  `).all(code) as Array<{ net_income: number }>;
+  const ttmNi = ttmQuarters.reduce((s, q) => s + (q.net_income || 0), 0);
+  const ttmNiWon = ttmNi * 100000000;
+  const roe = equity > 0 ? Math.round(ttmNiWon / equity * 10000) / 100 : null;
+
+  // 부채비율
+  const debtRatio = dart.total_liabilities != null && equity > 0
+    ? Math.round(dart.total_liabilities / equity * 10000) / 100 : null;
+
+  return { pbr, roe, debtRatio };
+}
+
 // 시총 구간 분류
 function getTier(mcap: number): string {
   if (mcap >= 50000) return '초대형주';
@@ -204,9 +238,17 @@ export async function GET(req: NextRequest) {
         tier: stockTier,
         priceDate: stock.price_date,
         perTtm: perTtm ? Math.round(perTtm * 10) / 10 : null,
-        roe: quarters[0].roe,
-        pbr: quarters[0].pbr,
-        debtRatio: quarters[0].debt_ratio,
+        // PBR/ROE/부채비율: 네이버 값 → null이면 DART 실시간 계산 폴백
+        ...(() => {
+          const naver = { roe: quarters[0].roe, pbr: quarters[0].pbr, debtRatio: quarters[0].debt_ratio };
+          if (naver.roe != null && naver.pbr != null && naver.debtRatio != null) return naver;
+          const rt = calcRealtimeMetrics(db, stock.code, stock.market_cap);
+          return {
+            roe: naver.roe ?? rt?.roe ?? null,
+            pbr: naver.pbr ?? rt?.pbr ?? null,
+            debtRatio: naver.debtRatio ?? rt?.debtRatio ?? null,
+          };
+        })(),
         opMargin: quarters[0].op_margin,
         // 증감액 기반 (v2)
         niChange,

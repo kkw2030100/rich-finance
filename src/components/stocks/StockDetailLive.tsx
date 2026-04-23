@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, BarChart3, TrendingUp,
 import { fetchStockDetail, StockDetailResponse, formatBillion, formatPct, getVerdictInfo } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
+import { ConsensusSection } from '@/components/stocks/ConsensusSection';
 
 export function StockDetailLive({ code }: { code: string }) {
   const [data, setData] = useState<StockDetailResponse | null>(null);
@@ -244,9 +245,9 @@ export function StockDetailLive({ code }: { code: string }) {
         </div>
       </div>
 
-      {/* Disclaimer */}
-      <div className="text-center text-[10px] py-4" style={{ color: 'var(--text-muted)' }}>
-        본 분석은 투자 자문이 아닌 정보 제공 목적이며, 투자 판단의 책임은 이용자 본인에게 있습니다.
+      {/* Consensus */}
+      <div className="mb-4">
+        <ConsensusSection code={code} />
       </div>
     </div>
   );

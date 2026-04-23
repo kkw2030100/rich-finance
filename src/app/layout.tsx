@@ -30,8 +30,15 @@ export default function RootLayout({
     >
       <body className="min-h-full flex">
         <Sidebar />
-        <main className="flex-1 ml-[220px] min-h-screen">
-          {children}
+        <main className="flex-1 ml-[220px] min-h-screen flex flex-col">
+          <div className="flex-1">{children}</div>
+          <footer className="px-6 py-4 text-center" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              본 분석은 투자 자문이 아닌 정보 제공 목적이며, 금융투자상품에 대한 투자 권유를 하지 않습니다.
+              제공 정보의 정확성을 보증하지 않으며, 투자 판단의 책임은 이용자 본인에게 있습니다.
+              과거 데이터 기반 분석이며 미래 수익을 보장하지 않습니다.
+            </p>
+          </footer>
         </main>
       </body>
     </html>

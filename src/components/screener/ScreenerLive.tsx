@@ -2,18 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Loader2, ArrowUpRight, ArrowDownRight, Star, TrendingUp, DollarSign, BarChart3, Layers } from 'lucide-react';
+import { Loader2, ArrowUpRight, ArrowDownRight, Star, TrendingUp, DollarSign, BarChart3, Layers, Users } from 'lucide-react';
 import { formatBillion, formatPct } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
-type Mode = 'total' | 'ttm' | 'gap' | 'composite';
+type Mode = 'total' | 'ttm' | 'gap' | 'composite' | 'analyst';
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; color: string }[] = [
   { key: 'total', label: '종합 저평가 종목', desc: '모든 기준을 종합한 점수', icon: Layers, color: 'var(--accent-blue)' },
   { key: 'ttm', label: '지금 싼 종목', desc: '벌고 있는 돈에 비해 가격이 싼 종목', icon: DollarSign, color: 'var(--accent-green)' },
   { key: 'gap', label: '아직 덜 오른 종목', desc: '돈을 더 잘 벌게 됐는데 가격이 안 오른 종목', icon: TrendingUp, color: 'var(--accent-purple)' },
   { key: 'composite', label: '싸고 좋은 기업', desc: '가격도 싸고 기업 체질도 좋은 종목', icon: BarChart3, color: 'var(--accent-yellow)' },
+  { key: 'analyst', label: '전문가가 더 오른다고 본 종목', desc: '증권사 목표가 대비 현재가가 낮은 종목', icon: Users, color: 'var(--accent-blue)' },
 ];
 
 interface ScreenerItem {
@@ -24,6 +25,14 @@ interface ScreenerItem {
   niChangeAmount: number | null; mcapChangeAmount: number | null;
   gapPct: number | null; profitStatus: string | null;
   valueScore: number | null; qualityScore: number | null; quadrant: string | null;
+  // analyst mode
+  niChange: number | null; niGapRatio: number | null;
+  turnaround: boolean; deficitTurn: boolean;
+  uiQuadrant: string | null; uiIndex: number | null;
+  score: number; verdict: string;
+  targetPriceWeighted?: number; upside?: number;
+  analystCount?: number; rating?: number;
+  currentPrice?: number;
 }
 
 function getQuadrantColor(q: string | null) {
@@ -44,7 +53,10 @@ export function ScreenerLive() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/undervalued?mode=${mode}&limit=50`)
+    const url = mode === 'analyst'
+      ? '/api/undervalued?mode=analyst&limit=50'
+      : `/api/undervalued?mode=${mode}&limit=50`;
+    fetch(url)
       .then(r => r.json())
       .then(d => setData(d.data || []))
       .catch(() => {})
@@ -115,6 +127,13 @@ export function ScreenerLive() {
                       <>
                         <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>PER(TTM)</th>
                         <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>괴리율</th>
+                      </>
+                    )}
+                    {mode === 'analyst' && (
+                      <>
+                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>목표가</th>
+                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>상승여력</th>
+                        <th className="text-center px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>투자의견</th>
                       </>
                     )}
                     <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>시총</th>
@@ -196,6 +215,23 @@ export function ScreenerLive() {
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.gapPct ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                             {stock.gapPct !== null ? (stock.gapPct > 0 ? '+' : '') + stock.gapPct + '%' : 'N/A'}
+                          </td>
+                        </>
+                      )}
+
+                      {mode === 'analyst' && (
+                        <>
+                          <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                            {stock.targetPriceWeighted ? stock.targetPriceWeighted.toLocaleString() + '원' : 'N/A'}
+                          </td>
+                          <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.upside ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {stock.upside != null ? (stock.upside > 0 ? '+' : '') + stock.upside + '%' : 'N/A'}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              {stock.rating ? '★' + stock.rating.toFixed(1) : '-'}
+                              {stock.analystCount ? ` (${stock.analystCount})` : ''}
+                            </span>
                           </td>
                         </>
                       )}
