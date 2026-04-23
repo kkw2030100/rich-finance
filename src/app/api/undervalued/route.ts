@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
 
       // DART 복합인덱스 (mode=composite)
       const dart = db.prepare(`
-        SELECT * FROM dart_financials WHERE code = ? ORDER BY fiscal_year DESC LIMIT 1
+        SELECT * FROM dart_financials WHERE code = ? ORDER BY year DESC LIMIT 1
       `).get(stock.code) as Record<string, unknown> | undefined;
 
       let valueScore: number | null = null;
