@@ -182,8 +182,8 @@ export function ScreenerLive() {
                           <td className="px-3 py-3 text-right text-sm" style={{ color: (stock.mcapChangeAmount ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                             {stock.mcapChangeAmount !== null ? (stock.mcapChangeAmount >= 0 ? '+' : '') + stock.mcapChangeAmount.toLocaleString() + '억' : 'N/A'}
                           </td>
-                          <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.gapPct ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.gapPct !== null ? (stock.gapPct > 0 ? '+' : '') + stock.gapPct + '%' : 'N/A'}
+                          <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.niGapRatio ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {stock.niGapRatio !== null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
                           </td>
                         </>
                       )}
@@ -212,8 +212,8 @@ export function ScreenerLive() {
                           <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
                             {stock.perTtm ? stock.perTtm + '배' : 'N/A'}
                           </td>
-                          <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.gapPct ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.gapPct !== null ? (stock.gapPct > 0 ? '+' : '') + stock.gapPct + '%' : 'N/A'}
+                          <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.niGapRatio ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {stock.niGapRatio !== null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
                           </td>
                         </>
                       )}
