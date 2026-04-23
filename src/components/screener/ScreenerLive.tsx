@@ -235,13 +235,13 @@ export function ScreenerLive() {
                       )}
 
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {formatBillion(stock.marketCap)}
+                        {formatBillion(stock.marketCap ?? 0)}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{stock.price.toLocaleString()}원</div>
+                        <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{(stock.price ?? 0).toLocaleString()}원</div>
                         <div className="text-[10px] flex items-center justify-end gap-0.5"
-                          style={{ color: stock.changePct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                          {stock.changePct >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                          style={{ color: (stock.changePct ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                          {(stock.changePct ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                           {formatPct(stock.changePct)}
                         </div>
                       </td>
