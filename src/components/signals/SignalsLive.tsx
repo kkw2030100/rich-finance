@@ -65,8 +65,7 @@ export function SignalsLive() {
             <span style={{ color: currentTab.color }}>{count}개</span> 종목 감지됨
           </div>
 
-          <div className="rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <div className="overflow-x-auto">
+          <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
               <table className="w-full min-w-[700px] sticky-header">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -159,7 +158,6 @@ export function SignalsLive() {
                   })}
                 </tbody>
               </table>
-            </div>
           </div>
 
           <div className="text-center text-[10px] py-3" style={{ color: 'var(--text-muted)' }}>

@@ -106,8 +106,7 @@ export function StockTableLive() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-        <div className="overflow-x-auto">
+      <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
           <table className="w-full min-w-[950px] sticky-header">
             <thead>
               <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -182,7 +181,6 @@ export function StockTableLive() {
               })}
             </tbody>
           </table>
-        </div>
       </div>
     </div>
   );
