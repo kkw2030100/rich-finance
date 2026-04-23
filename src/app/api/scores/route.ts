@@ -250,6 +250,27 @@ export async function GET(req: NextRequest) {
           };
         })(),
         opMargin: quarters[0].op_margin,
+        // 복합인덱스 (DART)
+        ...(() => {
+          const dart = db.prepare(`
+            SELECT gpa, fcf FROM dart_financials WHERE code = ? ORDER BY year DESC LIMIT 1
+          `).get(stock.code) as { gpa: number; fcf: number } | undefined;
+          if (!dart) return { uiValue: null, uiQuality: null, uiIndex: null, uiQuadrant: null };
+          const valueScore = (perTtm && perTtm > 0 && perTtm < 50) ? Math.max(0, 50 - perTtm) : 0;
+          const qualityScore = (dart.gpa || 0) * 100 + ((dart.fcf || 0) > 0 ? 20 : 0);
+          const medV = 25, medQ = 30;
+          let quad: string;
+          if (valueScore >= medV && qualityScore >= medQ) quad = '저평가+고품질';
+          else if (valueScore >= medV) quad = '저평가+저품질';
+          else if (qualityScore >= medQ) quad = '고평가+고품질';
+          else quad = '고평가+저품질';
+          return {
+            uiValue: Math.round(Math.min(valueScore * 2, 100)),
+            uiQuality: Math.round(Math.min(qualityScore, 100)),
+            uiIndex: Math.round(valueScore + qualityScore),
+            uiQuadrant: quad,
+          };
+        })(),
         // 증감액 기반 (v2)
         niChange,
         opChange,

@@ -22,13 +22,12 @@ interface ScreenerItem {
   price: number; changePct: number; marketCap: number; tier: string;
   perTtm: number | null; porTtm: number | null; psrTtm: number | null;
   ttmNi: number; ttmOp: number; ttmRevenue: number;
-  niChangeAmount: number | null; mcapChangeAmount: number | null;
-  gapPct: number | null; profitStatus: string | null;
-  valueScore: number | null; qualityScore: number | null; quadrant: string | null;
-  // analyst mode
+  mcapChange: number | null;
+  // backend fields
   niChange: number | null; niGapRatio: number | null;
   turnaround: boolean; deficitTurn: boolean;
   uiQuadrant: string | null; uiIndex: number | null;
+  uiValue: number | null; uiQuality: number | null;
   score: number; verdict: string;
   targetPriceWeighted?: number; upside?: number;
   analystCount?: number; rating?: number;
@@ -149,10 +148,10 @@ export function ScreenerLive() {
                         <Link href={`/stocks/${stock.code}`}>
                           <div className="flex items-center gap-1.5">
                             <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{stock.name}</div>
-                            {stock.profitStatus === 'turnaround' && (
+                            {stock.turnaround && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--accent-green)' }}>흑자전환</span>
                             )}
-                            {stock.profitStatus === 'loss_turn' && (
+                            {stock.deficitTurn && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--accent-red)' }}>적자전환</span>
                             )}
                           </div>
@@ -191,16 +190,16 @@ export function ScreenerLive() {
                       {mode === 'composite' && (
                         <>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {stock.valueScore ?? 'N/A'}
+                            {stock.uiValue ?? 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {stock.qualityScore ?? 'N/A'}
+                            {stock.uiQuality ?? 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-center">
-                            {stock.quadrant && (
+                            {stock.uiQuadrant && (
                               <span className="text-[10px] font-bold px-2 py-1 rounded-full"
-                                style={{ background: `${getQuadrantColor(stock.quadrant)}15`, color: getQuadrantColor(stock.quadrant) }}>
-                                {stock.quadrant === '저평가+고품질' && '★ '}{stock.quadrant}
+                                style={{ background: `${getQuadrantColor(stock.uiQuadrant)}15`, color: getQuadrantColor(stock.uiQuadrant) }}>
+                                {stock.uiQuadrant === '저평가+고품질' && '★ '}{stock.uiQuadrant}
                               </span>
                             )}
                           </td>

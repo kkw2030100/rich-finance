@@ -107,9 +107,13 @@ export async function GET(req: NextRequest) {
 
       let uiQuadrant: string | null = null;
       let uiIndex: number | null = null;
+      let uiValue: number | null = null;
+      let uiQuality: number | null = null;
       if (dart) {
         const valueScore = (perTtm && perTtm > 0 && perTtm < 50) ? Math.max(0, 50 - perTtm) : 0;
         const qualityScore = (dart.gpa || 0) * 100 + ((dart.fcf || 0) > 0 ? 20 : 0);
+        uiValue = Math.round(Math.min(valueScore * 2, 100));
+        uiQuality = Math.round(Math.min(qualityScore, 100));
         uiIndex = Math.round(valueScore + qualityScore);
         const medV = 25, medQ = 30;
         if (valueScore >= medV && qualityScore >= medQ) uiQuadrant = '저평가+고품질';
@@ -131,7 +135,7 @@ export async function GET(req: NextRequest) {
         niChange, opChange, mcapChange,
         niGapRatio: niGapRatio ? Math.round(niGapRatio * 10) / 10 : null,
         turnaround, deficitTurn,
-        uiQuadrant, uiIndex,
+        uiQuadrant, uiIndex, uiValue, uiQuality,
         score: eng?.total_score || 0,
         verdict: eng?.verdict?.toLowerCase().replace(/\s+/g, '_') || 'hold',
       };
