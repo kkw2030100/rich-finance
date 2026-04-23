@@ -95,9 +95,9 @@ export function ScreenerLive() {
             <span style={{ color: current.color }}>{data.length}개</span> 종목
           </div>
 
-          <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <div className="rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px]">
+              <table className="w-full min-w-[800px] sticky-header">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
                     <th className="w-8 px-2 py-2.5" />

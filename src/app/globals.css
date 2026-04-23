@@ -53,3 +53,11 @@ body {
   border-color: rgba(59, 130, 246, 0.3);
   transform: translateY(-1px);
 }
+
+/* Sticky table header */
+.sticky-header thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-secondary);
+}

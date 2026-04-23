@@ -14,15 +14,21 @@ const TABS: { key: SignalType; label: string; icon: typeof RefreshCw; color: str
 
 export function SignalsLive() {
   const [tab, setTab] = useState<SignalType>('turnaround');
-  const [data, setData] = useState<{ type: string; count: number; data: Record<string, unknown>[] } | null>(null);
+  const [items, setItems] = useState<Record<string, unknown>[]>([]);
+  const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/signals?type=${tab}`)
       .then(r => r.json())
-      .then(d => setData(d))
-      .catch(() => {})
+      .then(d => {
+        const key = tab === 'turnaround' ? 'turnaround' : tab === 'volume_spike' ? 'volumeSpike' : 'gapChange';
+        const countKey = key + 'Count';
+        setItems(d[key] || []);
+        setCount(d[countKey] || 0);
+      })
+      .catch(() => { setItems([]); setCount(0); })
       .finally(() => setLoading(false));
   }, [tab]);
 
@@ -51,17 +57,17 @@ export function SignalsLive() {
           <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-blue)' }} />
           <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>신호 탐지 중...</span>
         </div>
-      ) : !data ? (
-        <div className="text-center py-12 text-sm" style={{ color: 'var(--text-muted)' }}>데이터 없음</div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12 text-sm" style={{ color: 'var(--text-muted)' }}>감지된 신호 없음</div>
       ) : (
         <div>
           <div className="mb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-            <span style={{ color: currentTab.color }}>{data.count}개</span> 종목 감지됨
+            <span style={{ color: currentTab.color }}>{count}개</span> 종목 감지됨
           </div>
 
-          <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <div className="rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[700px] sticky-header">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
                     <th className="text-left px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
@@ -89,12 +95,12 @@ export function SignalsLive() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.data.map((row, i) => {
+                  {items.map((row, i) => {
                     const code = row.code as string;
                     const name = row.name as string;
                     const market = row.market as string;
-                    const price = row.price as number || row.close as number;
-                    const changePct = row.change_pct as number;
+                    const price = (row.price as number) || (row.close as number);
+                    const changePct = (row.changePct as number) || (row.change_pct as number);
                     const isUp = (changePct || 0) >= 0;
 
                     return (
@@ -108,10 +114,10 @@ export function SignalsLive() {
                         {tab === 'turnaround' && (
                           <>
                             <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--accent-red)' }}>
-                              {((row.prev_ni as number) || 0).toLocaleString()}억
+                              {((row.prevNi as number) || 0).toLocaleString()}억
                             </td>
                             <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
-                              {((row.curr_ni as number) || 0).toLocaleString()}억
+                              {((row.currNi as number) || 0).toLocaleString()}억
                             </td>
                           </>
                         )}
@@ -127,14 +133,14 @@ export function SignalsLive() {
                         )}
                         {tab === 'gap_change' && (
                           <>
-                            <td className="px-3 py-3 text-right text-sm" style={{ color: (row.niGrowth as number) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                              {(row.niGrowth as number) >= 0 ? '+' : ''}{(row.niGrowth as number)?.toFixed(1)}%
+                            <td className="px-3 py-3 text-right text-sm" style={{ color: (row.niChange as number) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                              {(row.niChange as number) >= 0 ? '+' : ''}{((row.niChange as number) || 0).toLocaleString()}억
                             </td>
-                            <td className="px-3 py-3 text-right text-sm" style={{ color: (row.mcapGrowth as number) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                              {(row.mcapGrowth as number) >= 0 ? '+' : ''}{(row.mcapGrowth as number)?.toFixed(1)}%
+                            <td className="px-3 py-3 text-right text-sm" style={{ color: (row.mcapChange as number) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                              {(row.mcapChange as number) >= 0 ? '+' : ''}{((row.mcapChange as number) || 0).toLocaleString()}억
                             </td>
-                            <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (row.gap as number) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                              {(row.gap as number) > 0 ? '+' : ''}{(row.gap as number)?.toFixed(1)}%p
+                            <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (row.niGapRatio as number) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                              {(row.niGapRatio as number) > 0 ? '+' : ''}{String(row.niGapRatio)}%
                             </td>
                           </>
                         )}

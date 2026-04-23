@@ -106,9 +106,9 @@ export function StockTableLive() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div className="rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[950px]">
+          <table className="w-full min-w-[950px] sticky-header">
             <thead>
               <tr style={{ background: 'var(--bg-secondary)' }}>
                 <th className="w-8 px-2 py-2.5" />
