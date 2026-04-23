@@ -176,14 +176,14 @@ export function ScreenerLive() {
 
                       {mode === 'gap' && (
                         <>
-                          <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.niChangeAmount ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.niChangeAmount !== null ? (stock.niChangeAmount >= 0 ? '+' : '') + stock.niChangeAmount.toLocaleString() + '억' : 'N/A'}
+                          <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.niChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {stock.niChange != null ? (stock.niChange >= 0 ? '+' : '') + stock.niChange.toLocaleString() + '억' : 'N/A'}
                           </td>
-                          <td className="px-3 py-3 text-right text-sm" style={{ color: (stock.mcapChangeAmount ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.mcapChangeAmount !== null ? (stock.mcapChangeAmount >= 0 ? '+' : '') + stock.mcapChangeAmount.toLocaleString() + '억' : 'N/A'}
+                          <td className="px-3 py-3 text-right text-sm" style={{ color: (stock.mcapChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {stock.mcapChange != null ? (stock.mcapChange >= 0 ? '+' : '') + stock.mcapChange.toLocaleString() + '억' : 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.niGapRatio ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.niGapRatio !== null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
+                            {stock.niGapRatio != null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
                           </td>
                         </>
                       )}
@@ -213,7 +213,7 @@ export function ScreenerLive() {
                             {stock.perTtm ? stock.perTtm + '배' : 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.niGapRatio ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.niGapRatio !== null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
+                            {stock.niGapRatio != null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
                           </td>
                         </>
                       )}
