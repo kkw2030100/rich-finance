@@ -3,11 +3,15 @@ import { TopPicks } from '@/components/home/TopPicks';
 import { SectorOverview } from '@/components/home/SectorOverview';
 import { SeasonalityCard } from '@/components/home/SeasonalityCard';
 import { FavoriteStocks } from '@/components/home/FavoriteStocks';
+import { getTopPicks } from '@/lib/queries/stocks';
 
-export default function HomePage() {
+export const revalidate = 300; // 5분 캐시
+
+export default async function HomePage() {
+  const topPicks = await getTopPicks(8);
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
           오늘의 시장
@@ -17,7 +21,6 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Top Row: Market Risk + Seasonality */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2">
           <MarketRiskCard />
@@ -25,17 +28,14 @@ export default function HomePage() {
         <SeasonalityCard />
       </div>
 
-      {/* Favorites */}
       <div className="mb-6">
         <FavoriteStocks />
       </div>
 
-      {/* Top Picks */}
       <div className="mb-6">
-        <TopPicks />
+        <TopPicks stocks={topPicks} />
       </div>
 
-      {/* Sector Overview */}
       <SectorOverview />
     </div>
   );

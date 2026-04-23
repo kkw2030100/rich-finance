@@ -9,22 +9,31 @@ import { FavoriteButton } from '@/components/common/FavoriteButton';
 
 type SortKey = 'score' | 'undervalue' | 'per' | 'marketCap';
 
+const TIERS = [
+  { key: 'all', label: '전체' },
+  { key: '초대형주', label: '초대형 5조+' },
+  { key: '대형주', label: '대형 1~5조' },
+  { key: '중형주', label: '중형 3천억~1조' },
+  { key: '소형주', label: '소형 ~3천억' },
+];
+
 export function StockTableLive() {
   const [data, setData] = useState<ScoreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('undervalue');
   const [filterMarket, setFilterMarket] = useState('all');
+  const [filterTier, setFilterTier] = useState('all');
   const [showFavOnly, setShowFavOnly] = useState(false);
   const { toggle, isFavorite, favorites } = useFavorites();
 
   useEffect(() => {
     setLoading(true);
-    fetchScores({ market: filterMarket, sort: sortKey, limit: 200 })
+    fetchScores({ market: filterMarket, sort: sortKey, limit: 200, tier: filterTier })
       .then(res => { setData(res.data); setError(null); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [filterMarket, sortKey]);
+  }, [filterMarket, sortKey, filterTier]);
 
   const filtered = showFavOnly ? data.filter(s => favorites.includes(s.code)) : data;
 
@@ -67,6 +76,18 @@ export function StockTableLive() {
               border: '1px solid var(--border)',
             }}>
             {m === 'all' ? '전체' : m.toUpperCase()}
+          </button>
+        ))}
+        <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
+        {TIERS.map(t => (
+          <button key={t.key} onClick={() => setFilterTier(t.key)}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            style={{
+              background: filterTier === t.key ? 'rgba(168,85,247,0.15)' : 'var(--bg-card)',
+              color: filterTier === t.key ? '#a855f7' : 'var(--text-secondary)',
+              border: '1px solid var(--border)',
+            }}>
+            {t.label}
           </button>
         ))}
         <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />

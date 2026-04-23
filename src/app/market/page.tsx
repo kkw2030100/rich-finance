@@ -1,6 +1,8 @@
 import { MarketRiskCard } from '@/components/home/MarketRiskCard';
 import { SeasonalityCard } from '@/components/home/SeasonalityCard';
-import { MarketDetail } from '@/components/market/MarketDetail';
+import { MarketLive } from '@/components/market/MarketLive';
+
+export const dynamic = 'force-dynamic';
 
 export default function MarketPage() {
   return (
@@ -21,7 +23,7 @@ export default function MarketPage() {
         <SeasonalityCard />
       </div>
 
-      <MarketDetail />
+      <MarketLive />
     </div>
   );
 }

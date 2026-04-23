@@ -85,11 +85,13 @@ export async function fetchScores(params?: {
   market?: string;
   sort?: string;
   limit?: number;
+  tier?: string;
 }): Promise<ScoresResponse> {
   const sp = new URLSearchParams();
-  if (params?.market) sp.set('market', params.market);
+  if (params?.market && params.market !== 'all') sp.set('market', params.market);
   if (params?.sort) sp.set('sort', params.sort);
   if (params?.limit) sp.set('limit', String(params.limit));
+  if (params?.tier && params.tier !== 'all') sp.set('tier', params.tier);
   const res = await fetch(`${BASE}/api/scores?${sp.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch scores');
   return res.json();

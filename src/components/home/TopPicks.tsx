@@ -2,17 +2,27 @@
 
 import Link from 'next/link';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { mockStocks, getVerdictLabel, getVerdictColor, formatPercent } from '@/data/mock-stocks';
+import { getVerdictLabel, getVerdictColor, formatPercent } from '@/lib/format';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
-export function TopPicks() {
-  const { toggle, isFavorite } = useFavorites();
+interface TopPickStock {
+  ticker: string;
+  name: string;
+  market: string;
+  sector: string;
+  totalScore: number;
+  verdict: string;
+  confidence: number;
+  close: number;
+  undervalueNi: number;
+  niGrowth: number;
+  mcapGrowth: number;
+  reasons: string[];
+}
 
-  const picks = mockStocks
-    .filter(s => !s.killZone)
-    .sort((a, b) => b.score.total - a.score.total)
-    .slice(0, 8);
+export function TopPicks({ stocks }: { stocks: TopPickStock[] }) {
+  const { toggle, isFavorite } = useFavorites();
 
   return (
     <div>
@@ -26,15 +36,13 @@ export function TopPicks() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-        {picks.map(stock => {
-          const vColor = getVerdictColor(stock.verdict.verdict);
-          const isUp = stock.priceChange >= 0;
+        {stocks.map(stock => {
+          const vColor = getVerdictColor(stock.verdict);
           return (
             <div key={stock.ticker}
               className="card-hover rounded-xl p-4 relative"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 
-              {/* Favorite toggle */}
               <div className="absolute top-3 right-3 z-10">
                 <FavoriteButton
                   active={isFavorite(stock.ticker)}
@@ -44,7 +52,6 @@ export function TopPicks() {
               </div>
 
               <Link href={`/stocks/${stock.ticker}`} className="block">
-                {/* Header */}
                 <div className="flex items-start justify-between mb-3 pr-6">
                   <div>
                     <div className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{stock.name}</div>
@@ -53,48 +60,45 @@ export function TopPicks() {
                     </div>
                   </div>
                   <div className="verdict-badge" style={{ background: `${vColor}18`, color: vColor }}>
-                    {getVerdictLabel(stock.verdict.verdict)}
+                    {getVerdictLabel(stock.verdict)}
                   </div>
                 </div>
 
-                {/* Score Bar */}
                 <div className="mb-3">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>종합 점수</span>
-                    <span className="text-sm font-black" style={{ color: vColor }}>{stock.score.total}</span>
+                    <span className="text-sm font-black" style={{ color: vColor }}>{stock.totalScore.toFixed(1)}</span>
                   </div>
                   <div className="h-2 rounded-full" style={{ background: 'var(--border)' }}>
-                    <div className="h-full rounded-full score-bar" style={{ width: `${stock.score.total}%`, background: vColor }} />
+                    <div className="h-full rounded-full score-bar" style={{ width: `${stock.totalScore}%`, background: vColor }} />
                   </div>
                 </div>
 
-                {/* Key Metrics */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   <div>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>저평가지수</div>
-                    <div className="text-xs font-bold" style={{ color: stock.financials.undervalueIndex > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                      {formatPercent(stock.financials.undervalueIndex)}
+                    <div className="text-xs font-bold" style={{ color: stock.undervalueNi > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                      {formatPercent(stock.undervalueNi)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>PER</div>
-                    <div className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{stock.financials.per.toFixed(1)}</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>순이익증감</div>
+                    <div className="text-xs font-bold" style={{ color: stock.niGrowth > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                      {formatPercent(stock.niGrowth)}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>ROE</div>
-                    <div className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{stock.financials.roe.toFixed(1)}%</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>신뢰도</div>
+                    <div className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{stock.confidence}%</div>
                   </div>
                 </div>
 
-                {/* Price */}
                 <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border)' }}>
                   <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {stock.price.toLocaleString()}원
+                    {stock.close.toLocaleString()}원
                   </span>
-                  <span className="flex items-center gap-0.5 text-xs font-bold"
-                    style={{ color: isUp ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                    {isUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                    {formatPercent(stock.priceChange)}
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    {stock.reasons[0]}
                   </span>
                 </div>
               </Link>
