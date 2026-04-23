@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Home, TrendingUp, Activity, Search } from 'lucide-react';
+import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle } from 'lucide-react';
 import clsx from 'clsx';
+import { chatCategories } from '@/data/chat-categories';
 
 const nav = [
   { href: '/', label: '홈', icon: Home },
@@ -35,7 +36,7 @@ export function Sidebar() {
       </Link>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 mt-2">
+      <nav className="flex-1 px-3 mt-2 overflow-y-auto">
         {nav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== '/' && pathname.startsWith(href));
           return (
@@ -50,6 +51,34 @@ export function Sidebar() {
               }}>
               <Icon size={18} />
               {label}
+            </Link>
+          );
+        })}
+
+        {/* AI Chat Section */}
+        <div className="mt-4 mb-2 px-3">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+            style={{ color: 'var(--text-muted)' }}>
+            <MessageCircle size={11} />
+            AI 상담
+          </div>
+        </div>
+
+        {chatCategories.map(cat => {
+          const href = `/chat/${cat.id}`;
+          const active = pathname === href;
+          return (
+            <Link key={cat.id} href={href}
+              className={clsx(
+                'flex items-center gap-2.5 px-3 py-2 rounded-lg mb-0.5 text-sm transition-colors',
+                active ? 'font-semibold' : 'font-normal',
+              )}
+              style={{
+                background: active ? `${cat.color}15` : 'transparent',
+                color: active ? cat.color : 'var(--text-secondary)',
+              }}>
+              <span className="text-base leading-none">{cat.emoji}</span>
+              <span className="truncate">{cat.name}</span>
             </Link>
           );
         })}

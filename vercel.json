@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/crawl/stocks?secret=${SUPABASE_SERVICE_ROLE_KEY}",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/crawl/prices?secret=${SUPABASE_SERVICE_ROLE_KEY}",
+      "schedule": "0 9 * * 1-5"
+    },
+    {
+      "path": "/api/crawl/financials?secret=${SUPABASE_SERVICE_ROLE_KEY}",
+      "schedule": "0 10 * * 1-5"
+    },
+    {
+      "path": "/api/calculate/growth?secret=${SUPABASE_SERVICE_ROLE_KEY}",
+      "schedule": "30 9 * * 1-5"
+    }
+  ]
+}
