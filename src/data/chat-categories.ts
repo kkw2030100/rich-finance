@@ -10,7 +10,7 @@ export interface ChatCategory {
 export const chatCategories: ChatCategory[] = [
   {
     id: 'value',
-    name: '가치 발굴러',
+    name: '종목 발굴러',
     emoji: '💎',
     description: '저평가 종목 찾기, 사이클 투자, 장기 가치투자',
     color: '#22c55e',
