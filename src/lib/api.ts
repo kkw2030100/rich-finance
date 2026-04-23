@@ -116,8 +116,8 @@ export function formatBillion(n: number): string {
   return n.toLocaleString() + '억';
 }
 
-export function formatPct(n: number | null): string {
-  if (n === null) return 'N/A';
+export function formatPct(n: number | null | undefined): string {
+  if (n == null) return 'N/A';
   const sign = n >= 0 ? '+' : '';
   return sign + n.toFixed(1) + '%';
 }
