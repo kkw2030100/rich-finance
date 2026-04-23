@@ -38,7 +38,7 @@ export const chatCategories: ChatCategory[] = [
   },
   {
     id: 'financial',
-    name: '숫자 해석기',
+    name: '재무 해석기',
     emoji: '🔢',
     description: '재무제표 읽기, 위험 신호 탐지, 분식회계 감별',
     color: '#3b82f6',
