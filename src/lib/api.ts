@@ -13,6 +13,14 @@ export interface ScoreItem {
   pbr: number | null;
   debtRatio: number | null;
   opMargin: number | null;
+  // 증감액 기반 (v2)
+  niChange: number | null;
+  opChange: number | null;
+  mcapChange: number | null;
+  niGapRatio: number | null;
+  turnaround: boolean;
+  deficitTurn: boolean;
+  // 하위 호환
   niGrowth: number | null;
   mcapGrowth: number | null;
   undervalueIndex: number | null;

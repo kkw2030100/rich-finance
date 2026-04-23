@@ -71,41 +71,102 @@ export async function GET(req: NextRequest) {
         per: number | null; pbr: number | null; is_estimate: number;
       }>;
 
-      if (quarters.length < 4) return null;
+      if (quarters.length < 2) return null;
 
-      // TTM
-      const recent4 = quarters.slice(0, 4);
-      const ttmRevenue = recent4.reduce((s, q) => s + (q.revenue || 0), 0);
-      const ttmNetIncome = recent4.reduce((s, q) => s + (q.net_income || 0), 0);
-      const ttmOp = recent4.reduce((s, q) => s + (q.operating_profit || 0), 0);
+      // TTM (4분기 있으면 TTM, 아니면 있는 만큼)
+      const ttmCount = Math.min(quarters.length, 4);
+      const recent = quarters.slice(0, ttmCount);
+      const ttmRevenue = recent.reduce((s, q) => s + (q.revenue || 0), 0);
+      const ttmNetIncome = recent.reduce((s, q) => s + (q.net_income || 0), 0);
+      const ttmOp = recent.reduce((s, q) => s + (q.operating_profit || 0), 0);
       const perTtm = ttmNetIncome > 0 ? stock.market_cap / ttmNetIncome : null;
 
-      // 괴리율 (TTM 기반)
-      let niGrowth: number | null = null;
-      let mcapGrowth: number | null = null;
-      let undervalueIndex: number | null = null;
+      // === 증감액 기반 괴리 계산 (BACKEND_HANDOFF v2) ===
+      // 핵심: (순이익 증감액 × 적정PER) - 시총 증감액 = 괴리
+      // 적정PER 10배 가정
+      const FAIR_PER = 10;
 
+      let niChange: number | null = null;     // 순이익 증감액 (억원)
+      let opChange: number | null = null;     // 영업이익 증감액 (억원)
+      let mcapChange: number | null = null;   // 시총 증감액 (억원)
+      let niGapRatio: number | null = null;   // 시총 대비 괴리 비율 (%)
+      let turnaround = false;                 // 흑자전환
+      let deficitTurn = false;                // 적자전환
+
+      // 시총 증감액 (1년 전 대비)
+      const yearAgoPrice = db.prepare(`
+        SELECT market_cap FROM daily_prices
+        WHERE code = ? AND market_cap > 0
+        ORDER BY date ASC LIMIT 1
+      `).get(stock.code) as { market_cap: number } | undefined;
+
+      if (yearAgoPrice && yearAgoPrice.market_cap > 0) {
+        mcapChange = stock.market_cap - yearAgoPrice.market_cap;
+      }
+
+      // 순이익/영업이익 증감액 계산
       if (quarters.length >= 8) {
-        const prev4 = quarters.slice(4, 8);
-        const prevTtmNi = prev4.reduce((s, q) => s + (q.net_income || 0), 0);
-        if (prevTtmNi !== 0 && ttmNetIncome !== 0) {
-          niGrowth = ((ttmNetIncome - prevTtmNi) / Math.abs(prevTtmNi)) * 100;
-        }
+        // TTM 기반 (최근 4분기 vs 이전 4분기)
+        const recentNi = quarters.slice(0, 4).reduce((s, q) => s + (q.net_income || 0), 0);
+        const prevNi = quarters.slice(4, 8).reduce((s, q) => s + (q.net_income || 0), 0);
+        niChange = recentNi - prevNi;
 
-        const yearAgoPrice = db.prepare(`
-          SELECT market_cap FROM daily_prices
-          WHERE code = ? AND market_cap > 0
-          ORDER BY date ASC LIMIT 1
-        `).get(stock.code) as { market_cap: number } | undefined;
+        const recentOp = quarters.slice(0, 4).reduce((s, q) => s + (q.operating_profit || 0), 0);
+        const prevOp = quarters.slice(4, 8).reduce((s, q) => s + (q.operating_profit || 0), 0);
+        opChange = recentOp - prevOp;
 
-        if (yearAgoPrice && yearAgoPrice.market_cap > 0) {
-          mcapGrowth = ((stock.market_cap - yearAgoPrice.market_cap) / yearAgoPrice.market_cap) * 100;
-        }
+        // 흑자전환/적자전환
+        if (prevNi <= 0 && recentNi > 0) turnaround = true;
+        if (prevNi > 0 && recentNi <= 0) deficitTurn = true;
+      } else if (quarters.length >= 2) {
+        // QoQ 폴백
+        const curr = quarters[0];
+        const prev = quarters[1];
+        niChange = (curr.net_income || 0) - (prev.net_income || 0);
+        opChange = (curr.operating_profit || 0) - (prev.operating_profit || 0);
 
-        if (niGrowth !== null && mcapGrowth !== null) {
-          undervalueIndex = niGrowth - mcapGrowth;
+        if ((prev.net_income || 0) <= 0 && (curr.net_income || 0) > 0) turnaround = true;
+        if ((prev.net_income || 0) > 0 && (curr.net_income || 0) <= 0) deficitTurn = true;
+
+        // 시총 증감도 같은 기간으로 폴백
+        if (mcapChange === null) {
+          const prevPeriod = prev.period.replace('(E)', '').trim();
+          const [py, pm] = prevPeriod.split('.');
+          if (py && pm) {
+            const prevEnd = new Date(parseInt(py), parseInt(pm), 0).toISOString().slice(0, 10);
+            const prevMcap = db.prepare(`
+              SELECT market_cap FROM daily_prices
+              WHERE code = ? AND market_cap > 0 AND date <= ?
+              ORDER BY date DESC LIMIT 1
+            `).get(stock.code, prevEnd) as { market_cap: number } | undefined;
+            if (prevMcap && prevMcap.market_cap > 0) {
+              mcapChange = stock.market_cap - prevMcap.market_cap;
+            }
+          }
         }
       }
+
+      // 괴리 계산: (순이익 증감액 × 적정PER) - 시총 증감액
+      let niGap: number | null = null;
+      if (niChange !== null && mcapChange !== null) {
+        niGap = (niChange * FAIR_PER) - mcapChange;
+        if (stock.market_cap > 0) {
+          niGapRatio = (niGap / stock.market_cap) * 100;
+        }
+      }
+
+      // 하위 호환: niGrowth, mcapGrowth, undervalueIndex도 유지
+      let niGrowth: number | null = null;
+      let mcapGrowth: number | null = null;
+      if (yearAgoPrice && yearAgoPrice.market_cap > 0) {
+        mcapGrowth = ((stock.market_cap - yearAgoPrice.market_cap) / yearAgoPrice.market_cap) * 100;
+      }
+      if (quarters.length >= 8) {
+        const recentNi = quarters.slice(0, 4).reduce((s, q) => s + (q.net_income || 0), 0);
+        const prevNi = quarters.slice(4, 8).reduce((s, q) => s + (q.net_income || 0), 0);
+        if (prevNi !== 0) niGrowth = ((recentNi - prevNi) / Math.abs(prevNi)) * 100;
+      }
+      const undervalueIndex = niGapRatio;
 
       // 엔진 스코어 or 간이 스코어
       const eng = scoresMap[stock.code];
@@ -147,6 +208,14 @@ export async function GET(req: NextRequest) {
         pbr: quarters[0].pbr,
         debtRatio: quarters[0].debt_ratio,
         opMargin: quarters[0].op_margin,
+        // 증감액 기반 (v2)
+        niChange,
+        opChange,
+        mcapChange,
+        niGapRatio: niGapRatio ? Math.round(niGapRatio * 10) / 10 : null,
+        turnaround,
+        deficitTurn,
+        // 하위 호환 (증감율 기반)
         niGrowth: niGrowth ? Math.round(niGrowth * 10) / 10 : null,
         mcapGrowth: mcapGrowth ? Math.round(mcapGrowth * 10) / 10 : null,
         undervalueIndex: undervalueIndex ? Math.round(undervalueIndex * 10) / 10 : null,

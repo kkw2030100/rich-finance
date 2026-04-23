@@ -114,8 +114,9 @@ export function StockTableLive() {
                 <th className="w-8 px-2 py-2.5" />
                 <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
                 <th className="px-3 py-2.5"><SortBtn label="점수" sk="score" /></th>
-                <th className="px-3 py-2.5 text-right"><SortBtn label="괴리율" sk="undervalue" /></th>
-                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>순이익증감</th>
+                <th className="px-3 py-2.5 text-right"><SortBtn label="괴리비율" sk="undervalue" /></th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>순이익증감(억)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>시총증감(억)</th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="시총" sk="marketCap" /></th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="PER(TTM)" sk="per" /></th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>ROE</th>
@@ -142,22 +143,24 @@ export function StockTableLive() {
                       <span className="text-sm font-black" style={{ color: vi.color }}>{stock.score}</span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="text-sm font-bold" style={{ color: (stock.undervalueIndex ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {stock.undervalueIndex !== null ? formatPct(stock.undervalueIndex).replace('%', '%p') : 'N/A'}
+                      <div className="text-sm font-bold" style={{ color: (stock.niGapRatio ?? stock.undervalueIndex ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                        {stock.niGapRatio != null ? formatPct(stock.niGapRatio) : stock.undervalueIndex != null ? formatPct(stock.undervalueIndex) : 'N/A'}
+                      </div>
+                      {stock.turnaround && <div className="text-[10px] font-bold" style={{ color: '#22c55e' }}>흑자전환</div>}
+                      {stock.deficitTurn && <div className="text-[10px] font-bold" style={{ color: '#ef4444' }}>적자전환</div>}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <span className="text-sm" style={{ color: (stock.niChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                        {stock.niChange != null ? (stock.niChange >= 0 ? '+' : '') + stock.niChange.toLocaleString() : 'N/A'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="text-sm" style={{ color: (stock.niGrowth ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {formatPct(stock.niGrowth)}
+                      <span className="text-sm" style={{ color: (stock.mcapChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                        {stock.mcapChange != null ? (stock.mcapChange >= 0 ? '+' : '') + stock.mcapChange.toLocaleString() : 'N/A'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatBillion(stock.marketCap)}</div>
-                      <div className="text-[10px] flex items-center justify-end gap-0.5"
-                        style={{ color: (stock.mcapGrowth ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {(stock.mcapGrowth ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
-                        {formatPct(stock.mcapGrowth)}
-                      </div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
