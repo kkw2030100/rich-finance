@@ -62,30 +62,67 @@ function RiskBar({ label, risk, max }: { label: string; risk: number; max: numbe
   );
 }
 
+const KR_INDICES = [
+  { key: 'kospi', label: '코스피' },
+  { key: 'kosdaq', label: '코스닥' },
+] as const;
+
+const US_INDICES = [
+  { key: 'sp500', label: 'S&P 500' },
+  { key: 'nasdaq', label: '나스닥' },
+  { key: 'dow', label: '다우존스' },
+] as const;
+
 export function MarketLive() {
   const [country, setCountry] = useState<Country>('kr');
+  const [market, setMarket] = useState('kospi');
   const [period, setPeriod] = useState<Period>('1y');
   const [overview, setOverview] = useState<MarketData | null>(null);
   const [riskHistory, setRiskHistory] = useState<RiskPoint[]>([]);
   const [signals, setSignals] = useState<RiskSignal[]>([]);
   const [current, setCurrent] = useState<CurrentRisk | null>(null);
+  const [allRisks, setAllRisks] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
-  const market = country === 'kr' ? 'kospi' : 'sp500';
-  const marketLabel = country === 'kr' ? '코스피' : 'S&P 500';
+  const indices = country === 'kr' ? KR_INDICES : US_INDICES;
+  const marketLabel = indices.find(i => i.key === market)?.label || market;
+
+  // 국가 변경 시 첫 지수로 리셋
+  useEffect(() => {
+    const first = country === 'kr' ? 'kospi' : 'sp500';
+    setMarket(first);
+  }, [country]);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
+
+    // 선택 지수의 히스토리 + 신호
+    const mainFetch = Promise.all([
       fetch('/api/market/overview').then(r => r.json()),
       fetch(`/api/market/risk/history?market=${market}&period=${period}`).then(r => r.json()),
       fetch(`/api/market/risk/signals?market=${market}`).then(r => r.json()),
-    ])
-      .then(([ov, hist, sig]) => {
+    ]);
+
+    // 모든 지수의 최신 위험도 (위험도 바용)
+    const allIndices = [...KR_INDICES, ...US_INDICES];
+    const riskFetches = Promise.all(
+      allIndices.map(idx =>
+        fetch(`/api/market/risk/signals?market=${idx.key}`)
+          .then(r => r.json())
+          .then(d => ({ key: idx.key, risk: d.current?.risk ?? 0 }))
+          .catch(() => ({ key: idx.key, risk: 0 }))
+      )
+    );
+
+    Promise.all([mainFetch, riskFetches])
+      .then(([[ov, hist, sig], risks]) => {
         setOverview(ov);
         setRiskHistory(hist.data || []);
         setSignals(sig.signals || []);
         setCurrent(sig.current || null);
+        const riskMap: Record<string, number> = {};
+        for (const r of risks) riskMap[r.key] = r.risk;
+        setAllRisks(riskMap);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -127,19 +164,16 @@ export function MarketLive() {
         ))}
       </div>
 
-      {/* Risk Bars */}
-      {country === 'kr' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <RiskBar label="코스피 위험도" risk={latestRisk} max={100} />
-          <RiskBar label="코스닥 위험도" risk={Math.min(100, latestRisk + 8)} max={100} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RiskBar label="S&P 500 위험도" risk={latestRisk} max={100} />
-          <RiskBar label="나스닥 위험도" risk={Math.min(100, latestRisk + 5)} max={100} />
-          <RiskBar label="다우존스 위험도" risk={Math.max(0, latestRisk - 3)} max={100} />
-        </div>
-      )}
+      {/* Risk Bars — 클릭 시 해당 지수 차트 전환 */}
+      <div className={`grid grid-cols-1 ${indices.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-3`}>
+        {indices.map(idx => (
+          <button key={idx.key} onClick={() => setMarket(idx.key)}
+            className="text-left cursor-pointer rounded-xl transition-all"
+            style={{ border: market === idx.key ? `2px solid ${getRiskColor(allRisks[idx.key] ?? 0)}` : '2px solid transparent' }}>
+            <RiskBar label={`${idx.label} 위험도`} risk={allRisks[idx.key] ?? 0} max={100} />
+          </button>
+        ))}
+      </div>
 
       {/* Risk Timeline Chart */}
       <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
