@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaRiskHistory } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,11 @@ const US_ETF_MAP: Record<string, string> = {
 
 export async function GET(req: NextRequest) {
   try {
+    if (!isLocalDb()) {
+      const data = await supaRiskHistory();
+      return NextResponse.json(data);
+    }
+
     const db = getDb();
     const market = req.nextUrl.searchParams.get('market') || 'kospi';
     const period = req.nextUrl.searchParams.get('period') || '1y';

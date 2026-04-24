@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaUndervalued } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,11 +13,17 @@ const FAIR_PER = 10;
  */
 export async function GET(req: NextRequest) {
   try {
-    const db = getDb();
     const params = req.nextUrl.searchParams;
     const mode = params.get('mode') || 'total';
     const limit = parseInt(params.get('limit') || '30');
     const tier = params.get('tier');
+
+    if (!isLocalDb()) {
+      const data = await supaUndervalued({ mode, limit, tier: tier || undefined });
+      return NextResponse.json(data);
+    }
+
+    const db = getDb();
     const market = params.get('market');
     const quadrant = params.get('quadrant');
 

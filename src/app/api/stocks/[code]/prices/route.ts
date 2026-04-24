@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaPrices } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,12 @@ export async function GET(
 ) {
   const { code } = await params;
   const days = parseInt(req.nextUrl.searchParams.get('days') || '60');
+
+  if (!isLocalDb()) {
+    const data = await supaPrices(code, days);
+    return NextResponse.json(data);
+  }
+
   const db = getDb();
 
   const rows = db.prepare(`

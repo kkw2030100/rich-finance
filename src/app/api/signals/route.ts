@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaSignals } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
+    if (!isLocalDb()) {
+      const data = await supaSignals();
+      return NextResponse.json(data);
+    }
+
     const db = getDb();
     const type = req.nextUrl.searchParams.get('type') || 'all';
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50');

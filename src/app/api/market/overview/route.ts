@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaMarketOverview } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    if (!isLocalDb()) {
+      const data = await supaMarketOverview();
+      return NextResponse.json(data);
+    }
+
     const db = getDb();
 
     // 최신 날짜

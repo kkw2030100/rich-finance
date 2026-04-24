@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
 import { systemPrompts } from '@/data/system-prompts';
 
 const client = new Anthropic({
@@ -200,16 +200,20 @@ export async function POST(req: NextRequest) {
     const lastUserMsg = [...messages].reverse().find((m: { role: string }) => m.role === 'user');
     let stockContext = '';
 
-    if (lastUserMsg) {
-      const db = getDb();
-      const codes = findStockCodes(lastUserMsg.content, db);
+    if (lastUserMsg && isLocalDb()) {
+      try {
+        const db = getDb();
+        const codes = findStockCodes(lastUserMsg.content, db);
 
-      if (codes.length > 0) {
-        stockContext = '\n\n---\n# 리치고 DB 실시간 데이터\n아래는 사용자가 언급한 종목의 실제 데이터입니다. 이 데이터를 기반으로 답변하세요.\n';
-        for (const code of codes) {
-          stockContext += getStockContext(code, db);
+        if (codes.length > 0) {
+          stockContext = '\n\n---\n# 리치고 DB 실시간 데이터\n아래는 사용자가 언급한 종목의 실제 데이터입니다. 이 데이터를 기반으로 답변하세요.\n';
+          for (const code of codes) {
+            stockContext += getStockContext(code, db);
+          }
+          stockContext += '\n\n---\n위 데이터는 리치고 두뇌엔진 brain.db에서 실시간 조회한 결과입니다. 이 데이터를 근거로 구체적으로 답변하세요.';
         }
-        stockContext += '\n\n---\n위 데이터는 리치고 두뇌엔진 brain.db에서 실시간 조회한 결과입니다. 이 데이터를 근거로 구체적으로 답변하세요.';
+      } catch {
+        // brain.db not available — continue without stock context
       }
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaConsensus } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,12 @@ export async function GET(
 ) {
   try {
     const { code } = await params;
+
+    if (!isLocalDb()) {
+      const data = await supaConsensus();
+      return NextResponse.json(data);
+    }
+
     const db = getDb();
 
     // 컨센서스 요약

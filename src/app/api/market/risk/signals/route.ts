@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaRiskSignals } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,11 @@ function calcRiskFromMarket(db: ReturnType<typeof getDb>, market: string): Array
 
 export async function GET(req: NextRequest) {
   try {
+    if (!isLocalDb()) {
+      const data = await supaRiskSignals();
+      return NextResponse.json(data);
+    }
+
     const db = getDb();
     const market = req.nextUrl.searchParams.get('market') || 'kospi';
 
