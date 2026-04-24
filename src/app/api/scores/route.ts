@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, isLocalDb } from '@/lib/db';
+import { supaScores } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,12 +48,26 @@ function getTier(mcap: number): string {
 
 export async function GET(req: NextRequest) {
   try {
-    const db = getDb();
     const params = req.nextUrl.searchParams;
     const market = params.get('market') || 'all';
     const sort = params.get('sort') || 'undervalue';
     const tier = params.get('tier') || 'all';
     const limit = parseInt(params.get('limit') || '50');
+
+    // Supabase 폴백 (Vercel 배포 시 brain.db 없음)
+    if (!isLocalDb()) {
+      const data = await supaScores({ market, tier, sort, limit });
+      return NextResponse.json({
+        timestamp: new Date().toISOString(),
+        totalCount: data.length,
+        distribution: {},
+        tierCounts: {},
+        engineScores: true,
+        data,
+      });
+    }
+
+    const db = getDb();
 
     // scores 테이블이 비어있으면 간이 스코어링, 있으면 엔진 결과 사용
     const scoreCount = (db.prepare('SELECT count(*) as cnt FROM scores').get() as { cnt: number }).cnt;

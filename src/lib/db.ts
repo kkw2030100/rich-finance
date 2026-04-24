@@ -1,16 +1,42 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+/**
+ * DB 접근 레이어 — 듀얼 모드
+ *
+ * 로컬 (brain.db 있을 때): better-sqlite3 직접 읽기 (빠름)
+ * Vercel (brain.db 없을 때): Supabase REST API (배포용)
+ */
 
-const DB_PATH = path.join(process.cwd(), '..', 'projects', 'stock-brain-engine', 'data', 'brain.db');
+let _useLocal = false;
+let _db: import('better-sqlite3').Database | null = null;
 
-let _db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (!_db) {
-    _db = new Database(DB_PATH, { readonly: true });
-    _db.pragma('journal_mode = WAL');
+function tryLocalDb(): import('better-sqlite3').Database | null {
+  if (_db) return _db;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require('better-sqlite3');
+    const path = require('path');
+    const dbPath = path.join(process.cwd(), '..', 'projects', 'stock-brain-engine', 'data', 'brain.db');
+    const fs = require('fs');
+    if (!fs.existsSync(dbPath)) return null;
+    _db = new Database(dbPath, { readonly: true });
+    (_db as import('better-sqlite3').Database).pragma('journal_mode = WAL');
+    _useLocal = true;
+    return _db;
+  } catch {
+    return null;
   }
-  return _db;
+}
+
+export function getDb(): import('better-sqlite3').Database {
+  const db = tryLocalDb();
+  if (!db) {
+    throw new Error('LOCAL_DB_NOT_AVAILABLE');
+  }
+  return db;
+}
+
+export function isLocalDb(): boolean {
+  tryLocalDb();
+  return _useLocal;
 }
 
 // Types matching brain.db schema
@@ -28,15 +54,15 @@ export interface DbDailyPrice {
   high: number;
   low: number;
   volume: number;
-  market_cap: number;   // 억원
+  market_cap: number;
   change_pct: number;
 }
 
 export interface DbFinancial {
   code: string;
   period: string;
-  period_type: string;  // 'annual' | 'quarter'
-  revenue: number;      // 억원
+  period_type: string;
+  revenue: number;
   operating_profit: number;
   net_income: number;
   op_margin: number | null;
