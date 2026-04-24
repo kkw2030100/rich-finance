@@ -13,14 +13,15 @@ const US_ETF_MAP: Record<string, string> = {
 
 export async function GET(req: NextRequest) {
   try {
+    const market = req.nextUrl.searchParams.get('market') || 'kospi';
+    const period = req.nextUrl.searchParams.get('period') || '1y';
+
     if (!isLocalDb()) {
-      const data = await supaRiskHistory();
+      const data = await supaRiskHistory(market, period);
       return NextResponse.json(data);
     }
 
     const db = getDb();
-    const market = req.nextUrl.searchParams.get('market') || 'kospi';
-    const period = req.nextUrl.searchParams.get('period') || '1y';
 
     const daysMap: Record<string, number> = { '3m': 63, '6m': 126, '1y': 252, '3y': 756 };
     const days = daysMap[period] || 252;

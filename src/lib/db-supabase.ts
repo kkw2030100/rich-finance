@@ -12,10 +12,7 @@ const supabase = createClient(
 
 // ─── scores ───
 export async function supaScores(options: {
-  market?: string;
-  tier?: string;
-  sort?: string;
-  limit?: number;
+  market?: string; tier?: string; sort?: string; limit?: number;
 }) {
   const limit = options.limit || 50;
 
@@ -29,12 +26,9 @@ export async function supaScores(options: {
     .order('total_score', { ascending: false })
     .limit(limit);
 
-  if (options.tier && options.tier !== 'all') {
-    query = query.eq('tier', options.tier);
-  }
+  if (options.tier && options.tier !== 'all') query = query.eq('tier', options.tier);
 
-  const { data, error } = await query;
-  if (error) throw error;
+  const { data } = await query;
   if (!data) return [];
 
   const tickers = data.map(d => d.ticker);
@@ -76,13 +70,12 @@ export async function supaScores(options: {
 
 // ─── stock detail ───
 export async function supaStockDetail(code: string) {
-  const [stockRes, scoreRes, pricesRes, finRes, killRes] = await Promise.all([
+  const [stockRes, scoreRes, pricesRes, finRes] = await Promise.all([
     supabase.from('stocks').select('*').eq('ticker', code).single(),
     supabase.from('stock_scores').select('*').eq('ticker', code).order('score_date', { ascending: false }).limit(1).single(),
     supabase.from('daily_prices').select('*').eq('ticker', code).order('trade_date', { ascending: false }).limit(120),
     supabase.from('quarterly_financials').select('*').eq('ticker', code)
       .order('fiscal_year', { ascending: false }).order('fiscal_quarter', { ascending: false }).limit(8),
-    supabase.from('kill_zone').select('*').eq('ticker', code).order('check_date', { ascending: false }).limit(1).single(),
   ]);
 
   const stock = stockRes.data;
@@ -91,61 +84,73 @@ export async function supaStockDetail(code: string) {
   const score = scoreRes.data;
   const latestPrice = prices[0];
 
-  // 간이 TTM
-  const ttmRevenue = fins.slice(0, 4).reduce((s: number, f: Record<string, unknown>) => s + ((f.revenue as number) || 0), 0);
+  const ttmRev = fins.slice(0, 4).reduce((s: number, f: Record<string, unknown>) => s + ((f.revenue as number) || 0), 0);
   const ttmOp = fins.slice(0, 4).reduce((s: number, f: Record<string, unknown>) => s + ((f.operating_profit as number) || 0), 0);
   const ttmNi = fins.slice(0, 4).reduce((s: number, f: Record<string, unknown>) => s + ((f.net_income as number) || 0), 0);
   const mcap = latestPrice?.market_cap || 0;
   const perTtm = ttmNi > 0 && mcap > 0 ? Math.round(mcap / ttmNi * 10) / 10 : null;
 
-  // quarterlyTrend 변환
-  const quarterlyTrend = fins.map((f: Record<string, unknown>) => ({
-    period: `${f.fiscal_year}.${String(((f.fiscal_quarter as number) || 1) * 3).padStart(2, '0')}`,
-    revenue: (f.revenue as number) || 0,
-    operatingProfit: (f.operating_profit as number) || 0,
-    netIncome: (f.net_income as number) || 0,
-    isEstimate: f.is_estimated as boolean,
-  }));
-
   return {
-    code: stock?.ticker || code,
-    name: stock?.name || code,
+    code: stock?.ticker || code, name: stock?.name || code,
     market: stock?.market || 'KOSPI',
-    price: latestPrice?.close || 0,
-    changePct: 0,
-    marketCap: mcap,
+    price: latestPrice?.close || 0, changePct: 0, marketCap: mcap,
     priceDate: latestPrice?.trade_date || '',
     valuation: {
       perTtm, porTtm: null, psrTtm: null,
       pbr: fins[0]?.pbr || null, roe: fins[0]?.roe || null,
       debtRatio: fins[0]?.debt_ratio || null, opMargin: fins[0]?.operating_margin || null,
-      eps: fins[0]?.eps || null,
-      ttmRevenue, ttmOp, ttmNi, periods: [],
+      eps: fins[0]?.eps || null, ttmRevenue: ttmRev, ttmOp, ttmNi, periods: [],
     },
     gap: { niGrowth: null, mcapGrowth: null, undervalueIndex: null },
-    quarterlyTrend,
+    quarterlyTrend: fins.map((f: Record<string, unknown>) => ({
+      period: `${f.fiscal_year}.${String(((f.fiscal_quarter as number) || 1) * 3).padStart(2, '0')}`,
+      revenue: (f.revenue as number) || 0, operatingProfit: (f.operating_profit as number) || 0,
+      netIncome: (f.net_income as number) || 0, isEstimate: f.is_estimated as boolean,
+    })),
     annualTrend: [],
     recentPrices: prices.slice(0, 30).map((p: Record<string, unknown>) => ({
       date: p.trade_date, close: p.close, volume: p.volume, market_cap: p.market_cap, change_pct: 0,
     })),
-    score: score?.total_score || 0,
-    verdict: score?.verdict || 'hold',
+    score: score?.total_score || 0, verdict: score?.verdict || 'hold',
   };
 }
 
 // ─── prices ───
 export async function supaPrices(code: string, days: number) {
-  const { data } = await supabase
-    .from('daily_prices')
+  const { data } = await supabase.from('daily_prices')
     .select('trade_date, open, high, low, close, volume, market_cap')
-    .eq('ticker', code)
-    .order('trade_date', { ascending: false })
-    .limit(days);
-
+    .eq('ticker', code).order('trade_date', { ascending: false }).limit(days);
   return (data || []).map(p => ({
     date: p.trade_date, open: p.open, high: p.high, low: p.low,
     close: p.close, volume: p.volume, market_cap: p.market_cap, change_pct: 0,
   }));
+}
+
+// ─── consensus ───
+export async function supaConsensus(code: string) {
+  const [consRes, analystRes, priceRes] = await Promise.all([
+    supabase.from('consensus').select('*').eq('ticker', code).single(),
+    supabase.from('analyst_opinions').select('*').eq('ticker', code).order('date', { ascending: false }),
+    supabase.from('daily_prices').select('close').eq('ticker', code).order('trade_date', { ascending: false }).limit(1).single(),
+  ]);
+
+  if (!consRes.data) return null;
+  const c = consRes.data;
+  const currentPrice = priceRes.data?.close || 0;
+  const upside = currentPrice > 0 ? Math.round((c.target_price - currentPrice) / currentPrice * 1000) / 10 : null;
+
+  return {
+    code, rating: c.rating, targetPrice: c.target_price, targetPriceWeighted: c.target_price,
+    consensusEps: c.consensus_eps, consensusPer: c.consensus_per,
+    analystCount: c.analyst_count, recentCount: (analystRes.data || []).length,
+    currentPrice, upside,
+    analysts: (analystRes.data || []).map((a: Record<string, unknown>) => ({
+      provider: a.provider, date: a.date, targetPrice: a.target_price,
+      prevTargetPrice: a.prev_target_price, changePct: a.change_pct,
+      opinion: a.opinion, prevOpinion: a.prev_opinion, weight: 1,
+    })),
+    disclaimer: '증권사 의견은 참고 자료이며 투자 판단의 책임은 본인에게 있습니다.',
+  };
 }
 
 // ─── undervalued ───
@@ -154,16 +159,23 @@ export async function supaUndervalued(options: { mode?: string; limit?: number; 
   return {
     mode: options.mode || 'total',
     modeLabel: { total: '종합 저평가', ttm: '지금 싼 종목', gap: '아직 덜 오른 종목', composite: '싸고 좋은 기업', analyst: '전문가 의견' }[options.mode || 'total'] || 'total',
-    totalCount: data.length,
-    data,
+    totalCount: data.length, data,
   };
 }
 
-// ─── signals (흑자전환 등) ───
+// ─── signals ───
 export async function supaSignals() {
-  // Supabase에서는 간이 응답
+  // Supabase에서 흑자전환 감지 (growth_metrics 기반)
+  const { data: turnarounds } = await supabase.from('growth_metrics')
+    .select('ticker, profit_status, net_income_growth, stocks!inner(name, market)')
+    .eq('profit_status', '흑자전환').limit(50);
+
   return {
-    turnaround: [], turnaroundCount: 0,
+    turnaround: (turnarounds || []).map(t => {
+      const stock = (t as Record<string, unknown>).stocks as { name: string; market: string };
+      return { code: t.ticker, name: stock.name, market: stock.market, prevNi: 0, currNi: 0, prevPeriod: '', currPeriod: '' };
+    }),
+    turnaroundCount: turnarounds?.length || 0,
     volumeSpike: [], volumeSpikeCount: 0,
     gapChange: [], gapChangeCount: 0,
   };
@@ -171,40 +183,34 @@ export async function supaSignals() {
 
 // ─── market overview ───
 export async function supaMarketOverview() {
-  const { data: macro } = await supabase
-    .from('macro_snapshot').select('*')
-    .order('snapshot_date', { ascending: false }).limit(1).single();
-
-  const { data: season } = await supabase
-    .from('seasonality_snapshot').select('*')
-    .order('snapshot_date', { ascending: false }).limit(1).single();
-
-  const { data: state } = await supabase
-    .from('market_state').select('*')
-    .order('judge_date', { ascending: false }).limit(1).single();
-
-  return { macro, seasonality: season, marketState: state };
+  const [macroRes, seasonRes, stateRes] = await Promise.all([
+    supabase.from('macro_snapshot').select('*').order('snapshot_date', { ascending: false }).limit(1).single(),
+    supabase.from('seasonality_snapshot').select('*').order('snapshot_date', { ascending: false }).limit(1).single(),
+    supabase.from('market_state').select('*').order('judge_date', { ascending: false }).limit(1).single(),
+  ]);
+  return { macro: macroRes.data, seasonality: seasonRes.data, marketState: stateRes.data };
 }
 
-// ─── market risk ───
+// ─── market risk (캐시에서 읽기) ───
 export async function supaMarketRisk() {
-  return {
-    kr: { total: { score: 0, status: '데이터 없음', label: '한국 종합' } },
-    us: { total: { score: 0, status: '데이터 없음', label: '미국 종합' } },
-  };
+  const { data } = await supabase.from('market_risk_cache').select('data').eq('id', 'current').single();
+  return data?.data || { kr: { total: { score: 0, status: 'N/A', label: '한국 종합' } }, us: { total: { score: 0, status: 'N/A', label: '미국 종합' } } };
 }
 
-// ─── risk history ───
-export async function supaRiskHistory() {
-  return { market: 'kospi', period: '1y', data: [] };
+// ─── risk history (캐시에서 읽기) ───
+export async function supaRiskHistory(market: string, period: string) {
+  const { data } = await supabase.from('market_risk_cache').select('data').eq('id', `history_${market}`).single();
+  const history = (data?.data || []) as Array<{ date: string; risk: number }>;
+
+  const daysMap: Record<string, number> = { '3m': 13, '6m': 26, '1y': 52, '3y': 156 };
+  const maxPoints = daysMap[period] || 52;
+  const sliced = history.slice(-maxPoints);
+
+  return { market, period, data: sliced };
 }
 
-// ─── risk signals ───
-export async function supaRiskSignals() {
-  return { current: { risk: 0, date: '', cashRecommend: 30, guide: '데이터 없음' }, signals: [] };
-}
-
-// ─── consensus ───
-export async function supaConsensus() {
-  return null;
+// ─── risk signals (캐시에서 읽기) ───
+export async function supaRiskSignals(market: string) {
+  const { data } = await supabase.from('market_risk_cache').select('data').eq('id', `signals_${market}`).single();
+  return data?.data || { current: { risk: 0, date: '', cash_pct: 30, action: 'N/A' }, signals: [], totalSignals: 0 };
 }

@@ -18,7 +18,8 @@ export async function GET(
     const { code } = await params;
 
     if (!isLocalDb()) {
-      const data = await supaConsensus();
+      const data = await supaConsensus(code);
+      if (!data) return NextResponse.json({ error: 'No consensus data' }, { status: 404 });
       return NextResponse.json(data);
     }
 

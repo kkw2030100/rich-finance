@@ -66,13 +66,14 @@ function calcRiskFromMarket(db: ReturnType<typeof getDb>, market: string): Array
 
 export async function GET(req: NextRequest) {
   try {
+    const market = req.nextUrl.searchParams.get('market') || 'kospi';
+
     if (!isLocalDb()) {
-      const data = await supaRiskSignals();
+      const data = await supaRiskSignals(market);
       return NextResponse.json(data);
     }
 
     const db = getDb();
-    const market = req.nextUrl.searchParams.get('market') || 'kospi';
 
     const isUS = market in US_ETF_MAP;
     const riskHistory = isUS
