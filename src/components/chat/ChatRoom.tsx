@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Send, Trash2, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { ChatCategory } from '@/data/chat-categories';
 import { useChatHistory } from '@/lib/useChatHistory';
 
@@ -130,7 +131,11 @@ export function ChatRoom({ category }: { category: ChatCategory }) {
                       borderBottomRightRadius: msg.role === 'user' ? '4px' : '16px',
                       borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '16px',
                     }}>
-                    {msg.content}
+                    {msg.role === 'assistant' ? (
+                      <div className="chat-markdown">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    ) : msg.content}
                   </div>
                   <div className="text-[10px] mt-1 px-1" style={{ color: 'var(--text-muted)' }}>
                     {new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
