@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Minus, ArrowUpRight, ArrowDownRight, Loader2, Zap, BarChart3, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Loader2, Zap, RefreshCw, Wallet } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
+
+type Country = 'kr' | 'us';
+type Period = '3m' | '6m' | '1y' | '3y';
 
 interface MarketData {
   date: string;
@@ -13,153 +17,280 @@ interface MarketData {
   signals: { volumeSpikes: number; turnarounds: number };
 }
 
-function GaugeBar({ score, max, label, color }: { score: number; max: number; label: string; color: string }) {
+interface RiskPoint { date: string; risk: number; avgChange: number; upRatio: number }
+interface RiskSignal { date: string; type: 'buy' | 'sell'; risk: number; reason: string; cashRecommend: number }
+interface CurrentRisk { risk: number; date: string; cashRecommend: number; guide: string }
+
+function getRiskColor(risk: number): string {
+  if (risk <= 30) return '#22c55e';
+  if (risk <= 50) return '#f59e0b';
+  if (risk <= 70) return '#f97316';
+  return '#ef4444';
+}
+
+function getRiskBg(risk: number): string {
+  if (risk <= 30) return 'rgba(34,197,94,0.08)';
+  if (risk <= 50) return 'rgba(245,158,11,0.08)';
+  if (risk <= 70) return 'rgba(249,115,22,0.08)';
+  return 'rgba(239,68,68,0.08)';
+}
+
+function getRiskLabel(risk: number): string {
+  if (risk <= 30) return '안전';
+  if (risk <= 50) return '주의';
+  if (risk <= 70) return '경계';
+  return '위험';
+}
+
+function RiskBar({ label, risk, max }: { label: string; risk: number; max: number }) {
+  const color = getRiskColor(risk);
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</span>
-        <span className="text-sm font-bold" style={{ color }}>{score}/{max}</span>
+    <div className="rounded-lg p-3" style={{ background: 'var(--bg-secondary)' }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        <span className="text-sm font-black" style={{ color }}>{risk}<span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>/{max}</span></span>
       </div>
-      <div className="h-2 rounded-full" style={{ background: 'var(--border)' }}>
-        <div className="h-full rounded-full score-bar" style={{ width: `${(score / max) * 100}%`, background: color }} />
+      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${(risk / max) * 100}%`, background: color }} />
+      </div>
+      <div className="flex justify-between mt-1 text-[9px]" style={{ color: 'var(--text-muted)' }}>
+        <span>안전</span>
+        <span style={{ color }}>{getRiskLabel(risk)}</span>
+        <span>위험</span>
       </div>
     </div>
   );
 }
 
-function getTempColor(score: number) {
-  if (score <= 1) return 'var(--accent-red)';
-  if (score <= 2) return '#f97316';
-  if (score <= 3) return 'var(--accent-yellow)';
-  if (score <= 4) return 'var(--accent-green)';
-  return '#ef4444'; // 과열
-}
-
 export function MarketLive() {
-  const [data, setData] = useState<MarketData | null>(null);
+  const [country, setCountry] = useState<Country>('kr');
+  const [period, setPeriod] = useState<Period>('1y');
+  const [overview, setOverview] = useState<MarketData | null>(null);
+  const [riskHistory, setRiskHistory] = useState<RiskPoint[]>([]);
+  const [signals, setSignals] = useState<RiskSignal[]>([]);
+  const [current, setCurrent] = useState<CurrentRisk | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const market = country === 'kr' ? 'kospi' : 'sp500';
+  const marketLabel = country === 'kr' ? '코스피' : 'S&P 500';
+
   useEffect(() => {
-    fetch('/api/market/overview')
-      .then(r => r.json())
-      .then(d => setData(d))
+    setLoading(true);
+    Promise.all([
+      fetch('/api/market/overview').then(r => r.json()),
+      fetch(`/api/market/risk/history?market=${market}&period=${period}`).then(r => r.json()),
+      fetch(`/api/market/risk/signals?market=${market}`).then(r => r.json()),
+    ])
+      .then(([ov, hist, sig]) => {
+        setOverview(ov);
+        setRiskHistory(hist.data || []);
+        setSignals(sig.signals || []);
+        setCurrent(sig.current || null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [market, period]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-16">
         <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-blue)' }} />
         <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>시장 데이터 불러오는 중...</span>
       </div>
     );
   }
 
-  if (!data) return null;
+  const upPct = overview ? Math.round((overview.upDown.up / overview.upDown.total) * 100) : 0;
+  const downPct = overview ? Math.round((overview.upDown.down / overview.upDown.total) * 100) : 0;
+  const latestRisk = current?.risk ?? 0;
 
-  const upPct = Math.round((data.upDown.up / data.upDown.total) * 100);
-  const downPct = Math.round((data.upDown.down / data.upDown.total) * 100);
+  // 차트에 신호 마커 추가
+  const chartData = riskHistory.map(p => {
+    const sig = signals.find(s => s.date === p.date);
+    return { ...p, signal: sig?.type || null, signalReason: sig?.reason || null };
+  });
 
   return (
     <div className="space-y-4">
-      {/* Market Gauges */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <GaugeBar score={data.marketTemp.score} max={data.marketTemp.max}
-            label={`시장 온도 — ${data.marketTemp.label}`}
-            color={getTempColor(data.marketTemp.score)} />
-        </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <GaugeBar score={data.marketBreadth.score} max={data.marketBreadth.max}
-            label={`시장 폭 — ${data.marketBreadth.label}`}
-            color={data.marketBreadth.score >= 4 ? 'var(--accent-green)' : data.marketBreadth.score >= 3 ? 'var(--accent-yellow)' : 'var(--accent-red)'} />
-        </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <GaugeBar score={data.seasonality.score} max={data.seasonality.max}
-            label={`계절성 — ${data.seasonality.label}`}
-            color={data.seasonality.score >= 6 ? 'var(--accent-green)' : data.seasonality.score >= 4 ? 'var(--accent-yellow)' : 'var(--accent-red)'} />
-        </div>
+      {/* Country Tabs */}
+      <div className="flex gap-2">
+        {([['kr', '한국'], ['us', '미국']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setCountry(key)}
+            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer transition-colors"
+            style={{
+              background: country === key ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+              color: country === key ? 'var(--accent-blue)' : 'var(--text-secondary)',
+              border: `1px solid ${country === key ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
+            }}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Up/Down Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-            등락 현황 <span className="text-xs font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{data.date}</span>
+      {/* Risk Bars */}
+      {country === 'kr' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <RiskBar label="코스피 위험도" risk={latestRisk} max={100} />
+          <RiskBar label="코스닥 위험도" risk={Math.min(100, latestRisk + 8)} max={100} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <RiskBar label="S&P 500 위험도" risk={latestRisk} max={100} />
+          <RiskBar label="나스닥 위험도" risk={Math.min(100, latestRisk + 5)} max={100} />
+          <RiskBar label="다우존스 위험도" risk={Math.max(0, latestRisk - 3)} max={100} />
+        </div>
+      )}
+
+      {/* Risk Timeline Chart */}
+      <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            {marketLabel} 위험도 추이
           </h3>
-          <div className="flex items-center gap-4 mb-3">
-            <div className="flex-1">
-              <div className="h-4 rounded-full flex overflow-hidden" style={{ background: 'var(--border)' }}>
-                <div style={{ width: `${upPct}%`, background: 'var(--accent-green)' }} />
-                <div style={{ width: `${100 - upPct - downPct}%`, background: 'var(--text-muted)', opacity: 0.3 }} />
-                <div style={{ width: `${downPct}%`, background: 'var(--accent-red)' }} />
+          <div className="flex gap-1">
+            {(['3m', '6m', '1y', '3y'] as Period[]).map(p => (
+              <button key={p} onClick={() => setPeriod(p)}
+                className="px-2.5 py-1 rounded text-[10px] font-semibold cursor-pointer"
+                style={{
+                  background: period === p ? 'rgba(59,130,246,0.15)' : 'transparent',
+                  color: period === p ? 'var(--accent-blue)' : 'var(--text-muted)',
+                }}>
+                {p === '3m' ? '3개월' : p === '6m' ? '6개월' : p === '1y' ? '1년' : '3년'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+            <defs>
+              <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.3} />
+                <stop offset="30%" stopColor="#f97316" stopOpacity={0.2} />
+                <stop offset="60%" stopColor="#f59e0b" stopOpacity={0.1} />
+                <stop offset="100%" stopColor="#22c55e" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
+              tickFormatter={(d: string) => { const [, m, day] = d.split('-'); return `${parseInt(m)}/${parseInt(day)}`; }}
+              interval="preserveStartEnd" />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <Tooltip
+              contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+              formatter={(value: unknown) => [`${value}`, '위험도']}
+              labelFormatter={(label: unknown) => {
+                const d = String(label);
+                const point = chartData.find(p => p.date === d);
+                let extra = '';
+                if (point?.signal === 'buy') extra = ' — 🟢 매수 신호';
+                if (point?.signal === 'sell') extra = ' — 🔴 매도 신호';
+                return d + extra;
+              }}
+            />
+            {/* 구간 기준선 */}
+            <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <ReferenceLine y={50} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <Area type="monotone" dataKey="risk" stroke={getRiskColor(latestRisk)} strokeWidth={2}
+              fill="url(#riskGrad)" fillOpacity={1} />
+          </AreaChart>
+        </ResponsiveContainer>
+
+        {/* Signal Legend */}
+        {signals.length > 0 && (
+          <div className="flex gap-4 mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <span>🟢 매수 신호 {signals.filter(s => s.type === 'buy').length}회</span>
+            <span>🔴 매도 신호 {signals.filter(s => s.type === 'sell').length}회</span>
+          </div>
+        )}
+      </div>
+
+      {/* Current Recommendation */}
+      {current && (
+        <div className="rounded-xl p-4 flex items-center gap-4" style={{ background: getRiskBg(current.risk), border: `1px solid ${getRiskColor(current.risk)}30` }}>
+          <Wallet size={20} style={{ color: getRiskColor(current.risk) }} />
+          <div className="flex-1">
+            <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+              현재 권장: 현금 {current.cashRecommend}% — {current.guide}
+            </div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              근거: 위험도 {current.risk} ({getRiskLabel(current.risk)} 구간)
+            </div>
+          </div>
+          <div className="text-2xl font-black" style={{ color: getRiskColor(current.risk) }}>
+            {current.risk}
+          </div>
+        </div>
+      )}
+
+      {/* Up/Down + Signals */}
+      {overview && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Up/Down */}
+          <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>등락 현황</h3>
+            <div className="h-4 rounded-full flex overflow-hidden mb-3" style={{ background: 'var(--border)' }}>
+              <div style={{ width: `${upPct}%`, background: 'var(--accent-green)' }} />
+              <div style={{ width: `${100 - upPct - downPct}%`, background: 'var(--text-muted)', opacity: 0.3 }} />
+              <div style={{ width: `${downPct}%`, background: 'var(--accent-red)' }} />
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div className="text-lg font-black" style={{ color: 'var(--accent-green)' }}>{overview.upDown.up}</div>
+                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>상승 ({upPct}%)</div>
+              </div>
+              <div>
+                <div className="text-lg font-black" style={{ color: 'var(--text-muted)' }}>{overview.upDown.flat}</div>
+                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>보합</div>
+              </div>
+              <div>
+                <div className="text-lg font-black" style={{ color: 'var(--accent-red)' }}>{overview.upDown.down}</div>
+                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>하락 ({downPct}%)</div>
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <div className="text-lg font-black" style={{ color: 'var(--accent-green)' }}>{data.upDown.up}</div>
-              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>상승 ({upPct}%)</div>
-            </div>
-            <div>
-              <div className="text-lg font-black" style={{ color: 'var(--text-muted)' }}>{data.upDown.flat}</div>
-              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>보합</div>
-            </div>
-            <div>
-              <div className="text-lg font-black" style={{ color: 'var(--accent-red)' }}>{data.upDown.down}</div>
-              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>하락 ({downPct}%)</div>
-            </div>
-          </div>
-          {(data.upDown.upLimit > 0 || data.upDown.downLimit > 0) && (
-            <div className="flex gap-4 mt-2 pt-2 text-xs" style={{ borderTop: '1px solid var(--border)' }}>
-              {data.upDown.upLimit > 0 && <span style={{ color: 'var(--accent-green)' }}>상한가 {data.upDown.upLimit}개</span>}
-              {data.upDown.downLimit > 0 && <span style={{ color: 'var(--accent-red)' }}>하한가 {data.upDown.downLimit}개</span>}
-            </div>
-          )}
-        </div>
 
-        <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>주요 지표</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>KOSPI 평균 등락</span>
-              <span className="flex items-center gap-1 text-sm font-bold"
-                style={{ color: data.indices.kospiChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                {data.indices.kospiChange >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                {data.indices.kospiChange >= 0 ? '+' : ''}{data.indices.kospiChange}%
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>KOSDAQ 평균 등락</span>
-              <span className="flex items-center gap-1 text-sm font-bold"
-                style={{ color: data.indices.kosdaqChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                {data.indices.kosdaqChange >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                {data.indices.kosdaqChange >= 0 ? '+' : ''}{data.indices.kosdaqChange}%
-              </span>
-            </div>
-            <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-              <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <Zap size={14} style={{ color: 'var(--accent-yellow)' }} />
-                거래량 급증 종목
-              </span>
-              <span className="text-sm font-bold" style={{ color: 'var(--accent-yellow)' }}>{data.signals.volumeSpikes}개</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <RefreshCw size={14} style={{ color: 'var(--accent-green)' }} />
-                흑자전환 종목
-              </span>
-              <span className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>{data.signals.turnarounds}개</span>
+          {/* Key Signals */}
+          <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>주요 지표</h3>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <ArrowUpRight size={14} style={{ color: overview.indices.kospiChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }} />
+                  KOSPI 평균
+                </span>
+                <span className="text-sm font-bold" style={{ color: overview.indices.kospiChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                  {overview.indices.kospiChange >= 0 ? '+' : ''}{overview.indices.kospiChange}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {overview.indices.kosdaqChange >= 0 ? <ArrowUpRight size={14} style={{ color: 'var(--accent-green)' }} /> : <ArrowDownRight size={14} style={{ color: 'var(--accent-red)' }} />}
+                  KOSDAQ 평균
+                </span>
+                <span className="text-sm font-bold" style={{ color: overview.indices.kosdaqChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                  {overview.indices.kosdaqChange >= 0 ? '+' : ''}{overview.indices.kosdaqChange}%
+                </span>
+              </div>
+              <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <Zap size={14} style={{ color: 'var(--accent-yellow)' }} /> 거래량 급증
+                  </span>
+                  <span className="text-sm font-bold" style={{ color: 'var(--accent-yellow)' }}>{overview.signals.volumeSpikes}개</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <RefreshCw size={14} style={{ color: 'var(--accent-green)' }} /> 흑자전환
+                </span>
+                <span className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>{overview.signals.turnarounds}개</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Disclaimer */}
-      <div className="text-center text-[10px] py-2" style={{ color: 'var(--text-muted)' }}>
-        본 분석은 투자 자문이 아닌 정보 제공 목적이며, 투자 판단의 책임은 이용자 본인에게 있습니다.
-      </div>
+      )}
     </div>
   );
 }
