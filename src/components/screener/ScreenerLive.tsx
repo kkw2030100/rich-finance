@@ -143,15 +143,17 @@ export function ScreenerLive() {
   // ---- 모든 모드 데이터 prefetch (마운트 1회) ----
   useEffect(() => {
     Promise.all([
-      fetchScores({ limit: 500 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
+      // KR + US 동시 fetch — 전종목 universe
+      fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
+      fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
       fetch('/api/breakout?limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=composite&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=analyst&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-    ]).then(([scores, breakout, total, ttm, gap, composite, analyst]) => {
-      setAllScoreData(scores);
+    ]).then(([scoresKR, scoresUS, breakout, total, ttm, gap, composite, analyst]) => {
+      setAllScoreData([...scoresKR, ...scoresUS]);
       setBreakoutData(breakout.data || []);
       setBreakoutMeta({ asOf: breakout.asOf ?? null, newCount: breakout.newCount || 0, keptCount: breakout.keptCount || 0 });
       setModeData({

@@ -15,12 +15,25 @@ export async function supaScores(options: {
   market?: string; tier?: string; sort?: string; limit?: number;
 }) {
   const limit = options.limit || 50;
+  const PAGE = 1000; // Supabase row cap
 
   // 미국 시장: scores 없음 — stocks + daily_prices만 조회
   if (options.market === 'us' || options.tier === '미국주식') {
-    const stocksRes = await supabase
-      .from('stocks').select('ticker, name, market, sector')
-      .eq('market', 'US').eq('is_active', true).limit(limit);
+    // 페이지네이션으로 1000+ row 가져옴
+    const stocksAll: { ticker: string; name: string; market: string; sector: string | null }[] = [];
+    let usFrom = 0;
+    while (stocksAll.length < limit) {
+      const take = Math.min(PAGE, limit - stocksAll.length);
+      const { data, error } = await supabase
+        .from('stocks').select('ticker, name, market, sector')
+        .eq('market', 'US').eq('is_active', true)
+        .range(usFrom, usFrom + take - 1);
+      if (error || !data || data.length === 0) break;
+      stocksAll.push(...data);
+      if (data.length < take) break;
+      usFrom += take;
+    }
+    const stocksRes = { data: stocksAll };
     const tickers = (stocksRes.data || []).map(s => s.ticker);
     const pricesRes = tickers.length > 0
       ? await supabase.from('daily_prices').select('ticker, close, market_cap, trade_date')
@@ -47,20 +60,36 @@ export async function supaScores(options: {
     }));
   }
 
-  let query = supabase
-    .from('stock_scores')
-    .select(`
-      ticker, score_date, total_score, layer1_score, layer2_score, layer3_score, layer4_score,
-      verdict, confidence, reasons, risks, market_cap, tier, tier_verdict,
-      stocks!inner(name, market, sector)
-    `)
-    .order('total_score', { ascending: false })
-    .limit(limit);
-
-  if (options.tier && options.tier !== 'all') query = query.eq('tier', options.tier);
-
-  const { data } = await query;
-  if (!data) return [];
+  // KR 분기: stock_scores에서 페이지네이션으로 가져옴 (Supabase 1000-row 캡 우회)
+  type ScoreRow = {
+    ticker: string; score_date: string; total_score: number;
+    layer1_score: number; layer2_score: number; layer3_score: number; layer4_score: number;
+    verdict: string; confidence: number; reasons: string[] | null; risks: string[] | null;
+    market_cap: number | null; tier: string | null; tier_verdict: string | null;
+    stocks: { name: string; market: string; sector: string };
+  };
+  const allRows: ScoreRow[] = [];
+  let from = 0;
+  while (allRows.length < limit) {
+    const take = Math.min(PAGE, limit - allRows.length);
+    let q = supabase
+      .from('stock_scores')
+      .select(`
+        ticker, score_date, total_score, layer1_score, layer2_score, layer3_score, layer4_score,
+        verdict, confidence, reasons, risks, market_cap, tier, tier_verdict,
+        stocks!inner(name, market, sector)
+      `)
+      .order('total_score', { ascending: false })
+      .range(from, from + take - 1);
+    if (options.tier && options.tier !== 'all') q = q.eq('tier', options.tier);
+    const { data: pageData, error } = await q;
+    if (error || !pageData || pageData.length === 0) break;
+    allRows.push(...(pageData as unknown as ScoreRow[]));
+    if (pageData.length < take) break;
+    from += take;
+  }
+  const data = allRows;
+  if (data.length === 0) return [];
 
   const tickers = data.map(d => d.ticker);
   const [pricesRes, growthRes] = await Promise.all([
