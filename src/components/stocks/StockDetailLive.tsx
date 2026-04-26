@@ -7,6 +7,8 @@ import { fetchStockDetail, StockDetailResponse, formatBillion, formatPct, getVer
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { ConsensusSection } from '@/components/stocks/ConsensusSection';
+import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
+import { CandleChart } from '@/components/stocks/CandleChart';
 
 export function StockDetailLive({ code }: { code: string }) {
   const [data, setData] = useState<StockDetailResponse | null>(null);
@@ -68,8 +70,8 @@ export function StockDetailLive({ code }: { code: string }) {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
-      <Link href="/stocks" className="flex items-center gap-1 text-sm mb-4" style={{ color: 'var(--accent-blue)' }}>
-        <ArrowLeft size={16} /> 종목 탐색
+      <Link href="/screener" className="flex items-center gap-1 text-sm mb-4" style={{ color: 'var(--accent-blue)' }}>
+        <ArrowLeft size={16} /> 투자 종목 발굴
       </Link>
 
       {/* HERO */}
@@ -105,6 +107,14 @@ export function StockDetailLive({ code }: { code: string }) {
           </div>
           <div className="text-lg font-black" style={{ color: vi.color }}>{score}</div>
         </div>
+      </div>
+
+      {/* Stage 2 Breakout 신호 (있을 때만) */}
+      <Stage2SignalSection code={code} />
+
+      {/* 캔들 차트 */}
+      <div className="mb-4">
+        <CandleChart code={code} isUS={data.market === 'us'} />
       </div>
 
       {/* 4 CARDS */}

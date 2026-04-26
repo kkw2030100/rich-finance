@@ -151,9 +151,18 @@ export async function supaPrices(code: string, days: number) {
   const { data } = await supabase.from('daily_prices')
     .select('trade_date, open, high, low, close, volume, market_cap')
     .eq('ticker', code).order('trade_date', { ascending: false }).limit(days);
+  // 미국 종목 cents → USD 환산
+  const isUS = /^[A-Z][A-Z\.\-]{0,5}$/.test(code);
+  const scale = isUS ? 100 : 1;
   return (data || []).map(p => ({
-    date: p.trade_date, open: p.open, high: p.high, low: p.low,
-    close: p.close, volume: p.volume, market_cap: p.market_cap, change_pct: 0,
+    date: p.trade_date,
+    open: p.open != null ? p.open / scale : null,
+    high: p.high != null ? p.high / scale : null,
+    low: p.low != null ? p.low / scale : null,
+    close: p.close != null ? p.close / scale : null,
+    volume: p.volume,
+    market_cap: p.market_cap,
+    change_pct: 0,
   }));
 }
 
