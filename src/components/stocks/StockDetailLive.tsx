@@ -8,6 +8,7 @@ import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { ConsensusSection } from '@/components/stocks/ConsensusSection';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
+import { ScoreBreakdown } from '@/components/stocks/ScoreBreakdown';
 import dynamic from 'next/dynamic';
 
 // lightweight-charts는 SSR 호환 안 됨 — 클라이언트 전용 동적 import
@@ -105,13 +106,27 @@ export function StockDetailLive({ code }: { code: string }) {
           </div>
         </div>
 
-        {/* Score bar */}
-        <div className="flex items-center gap-4">
-          <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>종합 점수</div>
-          <div className="flex-1 h-3 rounded-full" style={{ background: 'var(--border)' }}>
-            <div className="h-full rounded-full score-bar" style={{ width: `${score}%`, background: vi.color }} />
+        {/* Score bar + Breakdown — 50/50 분할 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          {/* 좌: 점수 바 + 큰 숫자 */}
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>종합 점수</div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-3 rounded-full" style={{ background: 'var(--border)' }}>
+                <div className="h-full rounded-full score-bar"
+                  style={{ width: `${score}%`, background: vi.color, transition: 'width 0.3s' }} />
+              </div>
+              <div className="text-2xl font-black" style={{ color: vi.color, minWidth: 40, textAlign: 'right' }}>
+                {score}
+              </div>
+            </div>
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              0~100점 · {vi.label} · 상위 {Math.max(1, 100 - score)}% 추정
+            </div>
           </div>
-          <div className="text-lg font-black" style={{ color: vi.color }}>{score}</div>
+
+          {/* 우: 6 layer 점수 breakdown + 강약 설명 */}
+          <ScoreBreakdown code={code} totalScore={score} />
         </div>
       </div>
 
