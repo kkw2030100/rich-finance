@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(params.get('limit') || '50');
     const newOnly = params.get('new_only') === 'true';
     const signalType = (params.get('type') || 'confluence').toLowerCase();
-    const validType = ['weekly', 'daily', 'confluence'].includes(signalType) ? signalType : 'confluence';
+    const ALLOWED = ['weekly', 'daily', 'confluence', 'mid_rapid', 'mid_steady', 'late_stage'];
+    const validType = ALLOWED.includes(signalType) ? signalType : 'confluence';
 
     if (!isLocalDb()) {
       const result = await supaBreakout({ limit, newOnly, signalType: validType });

@@ -9,11 +9,12 @@ import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
 
-type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakout';
+type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakout' | 'mid';
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; color: string }[] = [
   { key: 'all', label: '전종목', desc: '시장/시총/관심종목 자유 탐색', icon: Search, color: 'var(--accent-blue)' },
   { key: 'breakout', label: '본격 상승 초기', desc: 'Stage 1→2 전환 — 주봉/일봉 MA 돌파 + 거래량 진입', icon: Rocket, color: 'var(--accent-red)' },
+  { key: 'mid', label: '본격 상승 중', desc: '정배열 + MA 기울기 상승 — 추세 확인된 종목 추격/추종', icon: TrendingUp, color: 'var(--accent-green)' },
   { key: 'total', label: '종합 저평가', desc: '모든 기준을 종합한 점수', icon: Layers, color: 'var(--accent-blue)' },
   { key: 'ttm', label: '지금 싼 종목', desc: '벌고 있는 돈에 비해 가격이 싼 종목', icon: DollarSign, color: 'var(--accent-green)' },
   { key: 'gap', label: '아직 덜 오른 종목', desc: '돈을 더 잘 벌게 됐는데 가격이 안 오른 종목', icon: TrendingUp, color: 'var(--accent-purple)' },
@@ -102,7 +103,9 @@ export function ScreenerLive() {
   const [allScoreData, setAllScoreData] = useState<ScoreItem[]>([]);
   const [breakoutData, setBreakoutData] = useState<BreakoutItem[]>([]);
   const [breakoutMeta, setBreakoutMeta] = useState<{ asOf: string | null; newCount: number; keptCount: number }>({ asOf: null, newCount: 0, keptCount: 0 });
-  const [breakoutType, setBreakoutType] = useState<'confluence' | 'daily' | 'weekly'>('confluence');
+  type SignalType = 'confluence' | 'daily' | 'weekly' | 'mid_rapid' | 'mid_steady' | 'late_stage';
+  const [breakoutType, setBreakoutType] = useState<SignalType>('confluence');
+  const [midType, setMidType] = useState<SignalType>('mid_steady');
   const [breakoutLoading, setBreakoutLoading] = useState(false);
   const [modeData, setModeData] = useState<Record<string, ScreenerItem[]>>({ total: [], ttm: [], gap: [], composite: [], analyst: [] });
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -137,6 +140,8 @@ export function ScreenerLive() {
     if (searchParams.get('pref') === '1') setExcludePreferred(false);  // pref=1 → 우선주 포함 (default off)
     const bt = searchParams.get('bt');
     if (bt === 'daily' || bt === 'weekly') setBreakoutType(bt);
+    const mt = searchParams.get('mt');
+    if (mt === 'mid_rapid' || mt === 'late_stage') setMidType(mt);
     const q = searchParams.get('q');
     if (q) setSearch(q);
     prevModeRef.current = (m && MODES.find(mm => mm.key === m)) ? m : DEFAULT_MODE;
@@ -182,6 +187,7 @@ export function ScreenerLive() {
     if (showFavOnly) params.set('fav', '1');
     if (excludePreferred !== DEFAULT_EXCLUDE_PREFERRED) params.set('pref', '1');
     if (breakoutType !== 'confluence') params.set('bt', breakoutType);
+    if (midType !== 'mid_steady') params.set('mt', midType);
     if (search.trim()) params.set('q', search.trim());
 
     const queryString = params.toString();
@@ -193,13 +199,15 @@ export function ScreenerLive() {
       router.replace(url, { scroll: false });
     }
     prevModeRef.current = mode;
-  }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, breakoutType, search, hydrated, pathname, router]);
+  }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, breakoutType, midType, search, hydrated, pathname, router]);
 
-  // breakoutType 변경 시 재fetch (마운트 후)
+  // mode/subtype 변경 시 시그널 재fetch (breakout & mid 모드 모두 같은 endpoint 사용)
   useEffect(() => {
     if (!hydrated) return;
+    if (mode !== 'breakout' && mode !== 'mid') return;
+    const activeType = mode === 'breakout' ? breakoutType : midType;
     setBreakoutLoading(true);
-    fetch(`/api/breakout?limit=100&type=${breakoutType}`)
+    fetch(`/api/breakout?limit=200&type=${activeType}`)
       .then(r => r.json())
       .then(d => {
         setBreakoutData(d.data || []);
@@ -207,7 +215,7 @@ export function ScreenerLive() {
       })
       .catch(() => {})
       .finally(() => setBreakoutLoading(false));
-  }, [breakoutType, hydrated]);
+  }, [mode, breakoutType, midType, hydrated]);
 
   // ---- 외부 클릭으로 dropdown 닫기 ----
   useEffect(() => {
@@ -251,10 +259,12 @@ export function ScreenerLive() {
   );
 
   // ---- 모드별 결과 개수 (badge) ----
+  // breakoutData는 현재 active mode (breakout/mid)의 데이터를 담음 → 활성 모드의 badge에만 반영
   const counts = useMemo(() => {
     const result: Record<Mode, number> = {
       all: allScoreData.filter(passes).length,
-      breakout: breakoutData.filter(passes).length,
+      breakout: mode === 'breakout' ? breakoutData.filter(passes).length : 0,
+      mid: mode === 'mid' ? breakoutData.filter(passes).length : 0,
       total: (modeData.total || []).filter(passes).length,
       ttm: (modeData.ttm || []).filter(passes).length,
       gap: (modeData.gap || []).filter(passes).length,
@@ -263,7 +273,7 @@ export function ScreenerLive() {
     };
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
+  }, [allScoreData, breakoutData, modeData, mode, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
 
   // ---- 자동완성 (debounced API call, 필터와 무관) ----
   useEffect(() => {
@@ -511,26 +521,37 @@ export function ScreenerLive() {
           <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-blue)' }} />
           <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>스크리닝 중...</span>
         </div>
-      ) : mode === 'breakout' ? (
+      ) : mode === 'breakout' || mode === 'mid' ? (
         <>
           {/* Signal Type 토글 */}
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            {[
+            {(mode === 'breakout' ? [
               { key: 'confluence' as const, label: '🎯 Confluence', desc: '주봉+일봉 동시 신호 (보수적, 승률 97%)' },
               { key: 'daily' as const, label: '⚡ 일봉', desc: 'MA60 상향 돌파 + 역배열 이력 (조기 진입, 승률 92%)' },
               { key: 'weekly' as const, label: '🐢 주봉', desc: '베이스 돌파 + 거래량 폭증 (안정적, 승률 93%)' },
-            ].map(t => (
-              <button key={t.key} onClick={() => setBreakoutType(t.key)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                title={t.desc}
-                style={{
-                  background: breakoutType === t.key ? 'rgba(239,68,68,0.15)' : 'var(--bg-card)',
-                  color: breakoutType === t.key ? 'var(--accent-red)' : 'var(--text-secondary)',
-                  border: `1px solid ${breakoutType === t.key ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
-                }}>
-                {t.label}
-              </button>
-            ))}
+            ] : [
+              { key: 'mid_steady' as const, label: '🐢 상승 중', desc: '20W MA 8주 연속 상승 + 정배열 (메인 매수 시점, 승률 56%)' },
+              { key: 'mid_rapid' as const, label: '⚡ 급등 중', desc: '5W MA 4주 기울기 +3%↑ (단기 강세, 추격 매수)' },
+              { key: 'late_stage' as const, label: '⚠️ 위험 단계', desc: '5W MA +30%↑ Parabolic (보유 시 수익실현 검토)' },
+            ]).map(t => {
+              const activeType = mode === 'breakout' ? breakoutType : midType;
+              const setActive = mode === 'breakout' ? setBreakoutType : setMidType;
+              const accentColor = t.key === 'late_stage' ? 'var(--accent-yellow)' : (mode === 'mid' ? 'var(--accent-green)' : 'var(--accent-red)');
+              const accentBg = t.key === 'late_stage' ? 'rgba(250,204,21,0.15)' : (mode === 'mid' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)');
+              const accentBorder = t.key === 'late_stage' ? 'rgba(250,204,21,0.4)' : (mode === 'mid' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)');
+              return (
+                <button key={t.key} onClick={() => setActive(t.key)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                  title={t.desc}
+                  style={{
+                    background: activeType === t.key ? accentBg : 'var(--bg-card)',
+                    color: activeType === t.key ? accentColor : 'var(--text-secondary)',
+                    border: `1px solid ${activeType === t.key ? accentBorder : 'var(--border)'}`,
+                  }}>
+                  {t.label}
+                </button>
+              );
+            })}
             {breakoutLoading && <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} />}
           </div>
 
@@ -632,17 +653,31 @@ export function ScreenerLive() {
             </div>
           )}
 
-          <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-            <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 신호 점수 해석 (10~20점)</div>
-            <div className="space-y-1">
-              <div>· <strong style={{ color: 'var(--accent-red)' }}>16+ 매우 강함</strong> — 본격 진입 유효, 분할 매수 권장</div>
-              <div>· <strong style={{ color: 'var(--accent-yellow)' }}>13~15 강함</strong> — 필수 조건 + 가산점 확보</div>
-              <div>· <strong style={{ color: 'var(--text-primary)' }}>10~12 기본</strong> — 필수 4조건 충족 (베이스 돌파 + MA 수렴 + 양 기울기 + 거래량 폭증)</div>
+          {mode === 'breakout' ? (
+            <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+              <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 초기 — 점수 해석</div>
+              <div className="space-y-1">
+                <div>· <strong style={{ color: 'var(--accent-red)' }}>16+ 매우 강함</strong> — 본격 진입 유효, 분할 매수 권장</div>
+                <div>· <strong style={{ color: 'var(--accent-yellow)' }}>13~15 강함</strong> — 필수 조건 + 가산점 확보</div>
+                <div>· <strong style={{ color: 'var(--text-primary)' }}>10~12 기본</strong> — 필수 4조건 충족</div>
+              </div>
+              <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                Weinstein Stage 1→2 진입 패턴 — Mark Minervini VCP / Darvas Box 기반
+              </div>
             </div>
-            <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-              Weinstein Stage 1→2 진입 패턴. 3년 백테스트 26주 승률 92.9%, 평균 +30% (Mark Minervini VCP / Darvas Box 기반)
+          ) : (
+            <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+              <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 중 — 단계 해석</div>
+              <div className="space-y-1">
+                <div>· <strong style={{ color: 'var(--accent-green)' }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열, 메인 매수 시점 (12w 중간 +2.7%)</div>
+                <div>· <strong style={{ color: 'var(--accent-red)' }}>⚡ 급등 중</strong> — 5W MA 단기 강세, 추격 매수 (12w 중간 +1.4%, +30% 도달률 22%)</div>
+                <div>· <strong style={{ color: 'var(--accent-yellow)' }}>⚠️ 위험 단계</strong> — Parabolic 위험 (12w 중간 -5.4%, 보유 시 수익실현 검토)</div>
+              </div>
+              <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                백테스트 1,426종목 × 3년 — 백테스트 결과는 옵시디언 기록 참조
+              </div>
             </div>
-          </div>
+          )}
         </>
       ) : (
         <>
