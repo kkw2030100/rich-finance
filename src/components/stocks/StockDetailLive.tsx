@@ -96,7 +96,7 @@ export function StockDetailLive({ code }: { code: string }) {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{data.price.toLocaleString()}원</div>
+            <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{(data.price ?? 0).toLocaleString()}{data.market === 'us' ? ' USD' : '원'}</div>
             <div className="flex items-center justify-end gap-1 text-sm font-bold"
               style={{ color: isUp ? 'var(--accent-green)' : 'var(--accent-red)' }}>
               {isUp ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}

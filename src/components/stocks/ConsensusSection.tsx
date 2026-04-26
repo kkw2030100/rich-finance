@@ -88,7 +88,7 @@ export function ConsensusSection({ code }: { code: string }) {
         <div className="rounded-lg p-3" style={{ background: 'var(--bg-secondary)' }}>
           <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>목표주가 (가중평균)</div>
           <div className="text-base font-black" style={{ color: 'var(--text-primary)' }}>
-            {data.targetPriceWeighted.toLocaleString()}원
+            {(data.targetPriceWeighted ?? 0).toLocaleString()}원
           </div>
           <div className="text-[10px] flex items-center gap-0.5" style={{ color: isUpside ? 'var(--accent-green)' : 'var(--accent-red)' }}>
             {isUpside ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
@@ -133,7 +133,7 @@ export function ConsensusSection({ code }: { code: string }) {
                     <td className="px-3 py-2 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{a.provider}</td>
                     <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--text-muted)' }}>{a.date}</td>
                     <td className="px-3 py-2 text-xs text-right font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {a.targetPrice.toLocaleString()}원
+                      {(a.targetPrice ?? 0).toLocaleString()}원
                     </td>
                     <td className="px-3 py-2 text-xs text-center">
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
@@ -170,7 +170,7 @@ export function ConsensusSection({ code }: { code: string }) {
                       <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{a.provider}</td>
                       <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--text-muted)' }}>{a.date}</td>
                       <td className="px-3 py-2 text-xs text-right" style={{ color: 'var(--text-secondary)' }}>
-                        {a.targetPrice.toLocaleString()}원
+                        {(a.targetPrice ?? 0).toLocaleString()}원
                       </td>
                       <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--text-muted)' }}>{a.opinion}</td>
                     </tr>
@@ -282,8 +282,8 @@ function TargetPriceChart({ code, analysts, targetPriceWeighted, currentPrice }:
             labelFormatter={(label: unknown) => String(label)}
           />
           {/* 가중 평균 목표가 점선 */}
-          <ReferenceLine y={targetPriceWeighted} stroke="#22c55e" strokeDasharray="6 3"
-            label={{ value: `목표 ${targetPriceWeighted.toLocaleString()}`, position: 'right', fontSize: 10, fill: '#22c55e' }} />
+          <ReferenceLine y={targetPriceWeighted ?? 0} stroke="#22c55e" strokeDasharray="6 3"
+            label={{ value: `목표 ${(targetPriceWeighted ?? 0).toLocaleString()}`, position: 'right', fontSize: 10, fill: '#22c55e' }} />
           {/* 주가 라인 */}
           <Line type="monotone" dataKey="close" stroke="var(--accent-blue)" strokeWidth={2} dot={false} connectNulls />
           {/* 목표가 점 */}
