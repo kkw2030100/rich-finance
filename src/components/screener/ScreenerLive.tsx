@@ -9,18 +9,30 @@ import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
 
-type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakout' | 'mid';
+type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakout';
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; color: string }[] = [
   { key: 'all', label: '전종목', desc: '시장/시총/관심종목 자유 탐색', icon: Search, color: 'var(--accent-blue)' },
-  { key: 'breakout', label: '본격 상승 초기', desc: 'Stage 1→2 전환 — 주봉/일봉 MA 돌파 + 거래량 진입', icon: Rocket, color: 'var(--accent-red)' },
-  { key: 'mid', label: '본격 상승 중', desc: '정배열 + MA 기울기 상승 — 추세 확인된 종목 추격/추종', icon: TrendingUp, color: 'var(--accent-green)' },
+  { key: 'breakout', label: '본격 상승', desc: 'Stage 1→2 진입부터 본격 추세 진행까지 — 한 종목의 모든 단계를 배지로 동시 표시', icon: Rocket, color: 'var(--accent-red)' },
   { key: 'total', label: '종합 저평가', desc: '모든 기준을 종합한 점수', icon: Layers, color: 'var(--accent-blue)' },
   { key: 'ttm', label: '지금 싼 종목', desc: '벌고 있는 돈에 비해 가격이 싼 종목', icon: DollarSign, color: 'var(--accent-green)' },
   { key: 'gap', label: '아직 덜 오른 종목', desc: '돈을 더 잘 벌게 됐는데 가격이 안 오른 종목', icon: TrendingUp, color: 'var(--accent-purple)' },
   { key: 'composite', label: '싸고 좋은 기업', desc: '가격도 싸고 기업 체질도 좋은 종목', icon: BarChart3, color: 'var(--accent-yellow)' },
   { key: 'analyst', label: '전문가 매수의견', desc: '증권사 목표가 대비 현재가가 낮은 종목', icon: Users, color: 'var(--accent-blue)' },
 ];
+
+// 시그널 단계 (4그룹)
+type Stage = 'early' | 'rapid' | 'steady' | 'late';
+const STAGE_OF_TYPE: Record<string, Stage> = {
+  confluence: 'early', daily: 'early', weekly: 'early',
+  mid_rapid: 'rapid', mid_steady: 'steady', late_stage: 'late',
+};
+const STAGE_META: Record<Stage, { label: string; emoji: string; color: string; bg: string }> = {
+  early:  { label: '초기',  emoji: '🌱', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
+  rapid:  { label: '급등',  emoji: '⚡', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  steady: { label: '상승',  emoji: '🐢', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
+  late:   { label: '위험',  emoji: '⚠️', color: '#facc15', bg: 'rgba(250,204,21,0.15)' },
+};
 
 const COUNTRIES: { key: string; label: string; disabled?: boolean }[] = [
   { key: 'kr', label: '🇰🇷 한국' },
@@ -49,12 +61,13 @@ const DEFAULT_TIERS = ['초대형주'];
 const DEFAULT_MODE: Mode = 'total';
 const DEFAULT_EXCLUDE_PREFERRED = true;
 
-interface BreakoutItem {
+interface StagedSignal {
   code: string; name: string; market: string;
-  score: number; boxPos: number; maDiff: number;
-  ma60Slope: number; volRatio: number; ret4w: number;
-  confirmed: boolean; isNew: boolean; firstSeen: string;
   price: number | null; changePct: number | null; marketCap: number | null;
+  stages: Stage[];                  // 종목이 속한 단계들 (uniq)
+  signalTypes: string[];            // 원본 signal_type들 (confluence/daily/weekly/mid_rapid/mid_steady/late_stage)
+  scoreByType: Record<string, number>;
+  maxScore: number;
 }
 
 interface ScreenerItem {
@@ -101,11 +114,9 @@ export function ScreenerLive() {
 
   const [mode, setMode] = useState<Mode>(DEFAULT_MODE);
   const [allScoreData, setAllScoreData] = useState<ScoreItem[]>([]);
-  const [breakoutData, setBreakoutData] = useState<BreakoutItem[]>([]);
-  const [breakoutMeta, setBreakoutMeta] = useState<{ asOf: string | null; newCount: number; keptCount: number }>({ asOf: null, newCount: 0, keptCount: 0 });
-  type SignalType = 'confluence' | 'daily' | 'weekly' | 'mid_rapid' | 'mid_steady' | 'late_stage';
-  const [breakoutType, setBreakoutType] = useState<SignalType>('confluence');
-  const [midType, setMidType] = useState<SignalType>('mid_steady');
+  const [stagedSignals, setStagedSignals] = useState<StagedSignal[]>([]);
+  const [breakoutMeta, setBreakoutMeta] = useState<{ asOf: string | null }>({ asOf: null });
+  const [stageFilter, setStageFilter] = useState<'all' | Stage>('all');
   const [breakoutLoading, setBreakoutLoading] = useState(false);
   const [modeData, setModeData] = useState<Record<string, ScreenerItem[]>>({ total: [], ttm: [], gap: [], composite: [], analyst: [] });
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -138,10 +149,8 @@ export function ScreenerLive() {
     if (t) setTiers(t.split(',').filter(Boolean));
     if (searchParams.get('fav') === '1') setShowFavOnly(true);
     if (searchParams.get('pref') === '1') setExcludePreferred(false);  // pref=1 → 우선주 포함 (default off)
-    const bt = searchParams.get('bt');
-    if (bt === 'daily' || bt === 'weekly') setBreakoutType(bt);
-    const mt = searchParams.get('mt');
-    if (mt === 'mid_rapid' || mt === 'late_stage') setMidType(mt);
+    const sf = searchParams.get('stage');
+    if (sf === 'early' || sf === 'rapid' || sf === 'steady' || sf === 'late') setStageFilter(sf);
     const q = searchParams.get('q');
     if (q) setSearch(q);
     prevModeRef.current = (m && MODES.find(mm => mm.key === m)) ? m : DEFAULT_MODE;
@@ -155,16 +164,13 @@ export function ScreenerLive() {
       // KR + US 동시 fetch — 전종목 universe
       fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
       fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
-      fetch(`/api/breakout?limit=100&type=${breakoutType}`).then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=composite&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=analyst&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-    ]).then(([scoresKR, scoresUS, breakout, total, ttm, gap, composite, analyst]) => {
+    ]).then(([scoresKR, scoresUS, total, ttm, gap, composite, analyst]) => {
       setAllScoreData([...scoresKR, ...scoresUS]);
-      setBreakoutData(breakout.data || []);
-      setBreakoutMeta({ asOf: breakout.asOf ?? null, newCount: breakout.newCount || 0, keptCount: breakout.keptCount || 0 });
       setModeData({
         total: total.data || [],
         ttm: ttm.data || [],
@@ -186,8 +192,7 @@ export function ScreenerLive() {
     if (!arraysEqual(tiers, DEFAULT_TIERS)) params.set('t', tiers.join(','));
     if (showFavOnly) params.set('fav', '1');
     if (excludePreferred !== DEFAULT_EXCLUDE_PREFERRED) params.set('pref', '1');
-    if (breakoutType !== 'confluence') params.set('bt', breakoutType);
-    if (midType !== 'mid_steady') params.set('mt', midType);
+    if (stageFilter !== 'all') params.set('stage', stageFilter);
     if (search.trim()) params.set('q', search.trim());
 
     const queryString = params.toString();
@@ -199,23 +204,45 @@ export function ScreenerLive() {
       router.replace(url, { scroll: false });
     }
     prevModeRef.current = mode;
-  }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, breakoutType, midType, search, hydrated, pathname, router]);
+  }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, stageFilter, search, hydrated, pathname, router]);
 
-  // mode/subtype 변경 시 시그널 재fetch (breakout & mid 모드 모두 같은 endpoint 사용)
+  // 본격 상승 모드 진입 시 6가지 signal_type 통합 fetch (마운트 후)
   useEffect(() => {
     if (!hydrated) return;
-    if (mode !== 'breakout' && mode !== 'mid') return;
-    const activeType = mode === 'breakout' ? breakoutType : midType;
+    if (mode !== 'breakout') return;
+    if (stagedSignals.length > 0) return;  // 이미 받았으면 skip
     setBreakoutLoading(true);
-    fetch(`/api/breakout?limit=200&type=${activeType}`)
-      .then(r => r.json())
-      .then(d => {
-        setBreakoutData(d.data || []);
-        setBreakoutMeta({ asOf: d.asOf ?? null, newCount: d.newCount || 0, keptCount: d.keptCount || 0 });
-      })
-      .catch(() => {})
-      .finally(() => setBreakoutLoading(false));
-  }, [mode, breakoutType, midType, hydrated]);
+    const types = ['confluence', 'daily', 'weekly', 'mid_rapid', 'mid_steady', 'late_stage'];
+    Promise.all(types.map(t =>
+      fetch(`/api/breakout?limit=300&type=${t}`).then(r => r.json()).catch(() => ({ data: [] }))
+    )).then(results => {
+      // 종목별로 단계 합치기
+      const byCode = new Map<string, StagedSignal>();
+      let asOf: string | null = null;
+      for (let i = 0; i < types.length; i++) {
+        const t = types[i];
+        const stage = STAGE_OF_TYPE[t];
+        if (results[i]?.asOf) asOf = results[i].asOf;
+        for (const item of results[i].data || []) {
+          let entry = byCode.get(item.code);
+          if (!entry) {
+            entry = {
+              code: item.code, name: item.name, market: item.market,
+              price: item.price, changePct: item.changePct, marketCap: item.marketCap,
+              stages: [], signalTypes: [], scoreByType: {}, maxScore: 0,
+            };
+            byCode.set(item.code, entry);
+          }
+          if (!entry.stages.includes(stage)) entry.stages.push(stage);
+          entry.signalTypes.push(t);
+          entry.scoreByType[t] = item.score;
+          entry.maxScore = Math.max(entry.maxScore, item.score || 0);
+        }
+      }
+      setStagedSignals(Array.from(byCode.values()));
+      setBreakoutMeta({ asOf });
+    }).finally(() => setBreakoutLoading(false));
+  }, [mode, hydrated, stagedSignals.length]);
 
   // ---- 외부 클릭으로 dropdown 닫기 ----
   useEffect(() => {
@@ -247,11 +274,14 @@ export function ScreenerLive() {
     return true;
   }
 
-  const filteredBreakout = useMemo(
-    () => breakoutData.filter(passes),
+  const filteredStaged = useMemo(() => {
+    return stagedSignals.filter(s => {
+      if (!passes(s)) return false;
+      if (stageFilter !== 'all' && !s.stages.includes(stageFilter)) return false;
+      return true;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [breakoutData, countries, markets, tiers, showFavOnly, excludePreferred, favorites]
-  );
+  }, [stagedSignals, stageFilter, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
   const filteredData = useMemo(
     () => (modeData[mode] || []).filter(passes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,12 +289,10 @@ export function ScreenerLive() {
   );
 
   // ---- 모드별 결과 개수 (badge) ----
-  // breakoutData는 현재 active mode (breakout/mid)의 데이터를 담음 → 활성 모드의 badge에만 반영
   const counts = useMemo(() => {
     const result: Record<Mode, number> = {
       all: allScoreData.filter(passes).length,
-      breakout: mode === 'breakout' ? breakoutData.filter(passes).length : 0,
-      mid: mode === 'mid' ? breakoutData.filter(passes).length : 0,
+      breakout: stagedSignals.filter(passes).length,
       total: (modeData.total || []).filter(passes).length,
       ttm: (modeData.ttm || []).filter(passes).length,
       gap: (modeData.gap || []).filter(passes).length,
@@ -273,7 +301,19 @@ export function ScreenerLive() {
     };
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allScoreData, breakoutData, modeData, mode, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
+  }, [allScoreData, stagedSignals, modeData, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
+
+  // ---- 단계별 카운트 (필터 토글 배지) ----
+  const stageCounts = useMemo(() => {
+    const base = { all: 0, early: 0, rapid: 0, steady: 0, late: 0 };
+    const passing = stagedSignals.filter(passes);
+    base.all = passing.length;
+    for (const s of passing) {
+      for (const stage of s.stages) base[stage]++;
+    }
+    return base;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stagedSignals, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
 
   // ---- 자동완성 (debounced API call, 필터와 무관) ----
   useEffect(() => {
@@ -521,34 +561,34 @@ export function ScreenerLive() {
           <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-blue)' }} />
           <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>스크리닝 중...</span>
         </div>
-      ) : mode === 'breakout' || mode === 'mid' ? (
+      ) : mode === 'breakout' ? (
         <>
-          {/* Signal Type 토글 */}
+          {/* 단계 필터 토글 */}
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            {(mode === 'breakout' ? [
-              { key: 'confluence' as const, label: '🎯 Confluence', desc: '주봉+일봉 동시 신호 (보수적, 승률 97%)' },
-              { key: 'daily' as const, label: '⚡ 일봉', desc: 'MA60 상향 돌파 + 역배열 이력 (조기 진입, 승률 92%)' },
-              { key: 'weekly' as const, label: '🐢 주봉', desc: '베이스 돌파 + 거래량 폭증 (안정적, 승률 93%)' },
-            ] : [
-              { key: 'mid_steady' as const, label: '🐢 상승 중', desc: '20W MA 8주 연속 상승 + 정배열 (메인 매수 시점, 승률 56%)' },
-              { key: 'mid_rapid' as const, label: '⚡ 급등 중', desc: '5W MA 4주 기울기 +3%↑ (단기 강세, 추격 매수)' },
-              { key: 'late_stage' as const, label: '⚠️ 위험 단계', desc: '5W MA +30%↑ Parabolic (보유 시 수익실현 검토)' },
+            {([
+              { key: 'all' as const, emoji: '📊', label: '전체', color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
+              { key: 'early' as const, ...STAGE_META.early, label: '상승 초기' },
+              { key: 'rapid' as const, ...STAGE_META.rapid, label: '급등 중' },
+              { key: 'steady' as const, ...STAGE_META.steady, label: '상승 중' },
+              { key: 'late' as const, ...STAGE_META.late, label: '위험 단계' },
             ]).map(t => {
-              const activeType = mode === 'breakout' ? breakoutType : midType;
-              const setActive = mode === 'breakout' ? setBreakoutType : setMidType;
-              const accentColor = t.key === 'late_stage' ? 'var(--accent-yellow)' : (mode === 'mid' ? 'var(--accent-green)' : 'var(--accent-red)');
-              const accentBg = t.key === 'late_stage' ? 'rgba(250,204,21,0.15)' : (mode === 'mid' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)');
-              const accentBorder = t.key === 'late_stage' ? 'rgba(250,204,21,0.4)' : (mode === 'mid' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)');
+              const cnt = stageCounts[t.key];
+              const active = stageFilter === t.key;
               return (
-                <button key={t.key} onClick={() => setActive(t.key)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                  title={t.desc}
+                <button key={t.key} onClick={() => setStageFilter(t.key)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   style={{
-                    background: activeType === t.key ? accentBg : 'var(--bg-card)',
-                    color: activeType === t.key ? accentColor : 'var(--text-secondary)',
-                    border: `1px solid ${activeType === t.key ? accentBorder : 'var(--border)'}`,
+                    background: active ? t.bg : 'var(--bg-card)',
+                    color: active ? t.color : 'var(--text-secondary)',
+                    border: `1px solid ${active ? t.color + '60' : 'var(--border)'}`,
                   }}>
-                  {t.label}
+                  {('emoji' in t ? t.emoji : '')} {t.label}
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ background: active ? t.color + '30' : 'var(--bg-secondary)',
+                             color: cnt > 0 ? (active ? t.color : 'var(--text-secondary)') : 'var(--text-muted)',
+                             minWidth: '20px', textAlign: 'center' }}>
+                    {cnt}
+                  </span>
                 </button>
               );
             })}
@@ -556,80 +596,61 @@ export function ScreenerLive() {
           </div>
 
           <div className="mb-3 text-xs flex items-center gap-3" style={{ color: 'var(--text-muted)' }}>
-            <span style={{ color: current.color }}>{filteredBreakout.length}개</span>
-            <span>/ 전체 {breakoutData.length}개</span>
+            <span style={{ color: current.color }}>{filteredStaged.length}개</span>
+            <span>/ 전체 {stagedSignals.length}개</span>
             {breakoutMeta.asOf && <span>· 기준일 {breakoutMeta.asOf}</span>}
-            {breakoutMeta.newCount > 0 && (
-              <span style={{ color: 'var(--accent-green)' }}>🆕 신규 {breakoutMeta.newCount}</span>
-            )}
-            {breakoutMeta.keptCount > 0 && (
-              <span>🔄 유지 {breakoutMeta.keptCount}</span>
-            )}
           </div>
 
-          {filteredBreakout.length === 0 ? (
+          {filteredStaged.length === 0 ? (
             <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
               <Rocket size={32} className="mx-auto mb-2 opacity-40" />
-              <p className="text-sm">{breakoutData.length === 0 ? '현재 본격 상승 초기 신호 종목이 없습니다.' : '필터 조건에 맞는 종목이 없습니다.'}</p>
-              <p className="text-xs mt-1">{breakoutData.length === 0 ? '매일 16:30 한국 시장 마감 후 자동 스캔됩니다.' : '필터를 변경하거나 초기화해 보세요.'}</p>
+              <p className="text-sm">{stagedSignals.length === 0 ? '현재 본격 상승 신호 종목이 없습니다.' : '필터 조건에 맞는 종목이 없습니다.'}</p>
+              <p className="text-xs mt-1">{stagedSignals.length === 0 ? '매일 16:30 한국 시장 마감 후 자동 스캔됩니다.' : '필터를 변경하거나 초기화해 보세요.'}</p>
             </div>
           ) : (
             <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-              <table className="w-full min-w-[900px] sticky-header">
+              <table className="w-full min-w-[800px] sticky-header">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
                     <th className="w-8 px-2 py-2.5" />
                     <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
-                    <th className="text-center px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>상태</th>
-                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>신호 점수</th>
-                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>박스 위치</th>
-                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>거래량</th>
-                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>4주 추세</th>
+                    <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>단계</th>
+                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>최고 점수</th>
                     <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>시총</th>
                     <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>현재가</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBreakout.map((s, i) => (
+                  {filteredStaged.sort((a, b) => b.maxScore - a.maxScore).map((s, i) => (
                     <tr key={s.code} className="card-hover" style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                       <td className="px-2 py-3 text-center">
                         <FavoriteButton active={isFavorite(s.code)} onClick={() => toggleFav(s.code)} size={14} />
                       </td>
                       <td className="px-3 py-3">
                         <Link href={`/stocks/${s.code}`}>
-                          <div className="flex items-center gap-1.5">
-                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
-                          </div>
+                          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
                           <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            {s.code} · {s.market} · 첫 발견 {s.firstSeen}
+                            {s.code} · {s.market}
                           </div>
                         </Link>
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        {s.isNew ? (
-                          <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--accent-green)' }}>
-                            🆕 신규
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                            🔄 유지
-                          </span>
-                        )}
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(['early','rapid','steady','late'] as Stage[]).filter(st => s.stages.includes(st)).map(st => {
+                            const meta = STAGE_META[st];
+                            return (
+                              <span key={st} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: meta.bg, color: meta.color }}>
+                                {meta.emoji} {meta.label}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <span className="text-sm font-black" style={{ color: s.score >= 16 ? 'var(--accent-red)' : s.score >= 13 ? 'var(--accent-yellow)' : 'var(--text-primary)' }}>
-                          {s.score}
+                        <span className="text-sm font-black" style={{ color: s.maxScore >= 16 ? 'var(--accent-red)' : s.maxScore >= 13 ? 'var(--accent-yellow)' : 'var(--text-primary)' }}>
+                          {s.maxScore}
                         </span>
-                        <span className="text-[10px] ml-0.5" style={{ color: 'var(--text-muted)' }}>/20</span>
-                      </td>
-                      <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {s.boxPos.toFixed(0)}%
-                      </td>
-                      <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: s.volRatio >= 1.5 ? 'var(--accent-green)' : 'var(--text-primary)' }}>
-                        {s.volRatio.toFixed(2)}x
-                      </td>
-                      <td className="px-3 py-3 text-right text-sm" style={{ color: s.ret4w >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {s.ret4w >= 0 ? '+' : ''}{s.ret4w.toFixed(1)}%
                       </td>
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
                         {formatMoney(s.marketCap, s.market)}
@@ -653,31 +674,18 @@ export function ScreenerLive() {
             </div>
           )}
 
-          {mode === 'breakout' ? (
-            <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-              <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 초기 — 점수 해석</div>
-              <div className="space-y-1">
-                <div>· <strong style={{ color: 'var(--accent-red)' }}>16+ 매우 강함</strong> — 본격 진입 유효, 분할 매수 권장</div>
-                <div>· <strong style={{ color: 'var(--accent-yellow)' }}>13~15 강함</strong> — 필수 조건 + 가산점 확보</div>
-                <div>· <strong style={{ color: 'var(--text-primary)' }}>10~12 기본</strong> — 필수 4조건 충족</div>
-              </div>
-              <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                Weinstein Stage 1→2 진입 패턴 — Mark Minervini VCP / Darvas Box 기반
-              </div>
+          <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+            <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 — 단계 해석 (한 종목이 여러 단계에 동시 속할 수 있음)</div>
+            <div className="space-y-1">
+              <div>· <strong style={{ color: STAGE_META.early.color }}>🌱 상승 초기</strong> — Stage 1→2 진입 (주봉 베이스 돌파 / 일봉 MA60 돌파). 분할 매수 첫 진입</div>
+              <div>· <strong style={{ color: STAGE_META.steady.color }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열. 메인 매수 시점 (백테스트 12w 중간 +2.7%, 승률 56%)</div>
+              <div>· <strong style={{ color: STAGE_META.rapid.color }}>⚡ 급등 중</strong> — 5W MA 단기 강세. 추격 매수 (12w 중간 +1.4%, +30% 도달 22%)</div>
+              <div>· <strong style={{ color: STAGE_META.late.color }}>⚠️ 위험 단계</strong> — Parabolic 위험 (12w 중간 -5.4%, -10%↓ 손실률 44%). 매수 X, 보유 시 수익실현 검토</div>
             </div>
-          ) : (
-            <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-              <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 중 — 단계 해석</div>
-              <div className="space-y-1">
-                <div>· <strong style={{ color: 'var(--accent-green)' }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열, 메인 매수 시점 (12w 중간 +2.7%)</div>
-                <div>· <strong style={{ color: 'var(--accent-red)' }}>⚡ 급등 중</strong> — 5W MA 단기 강세, 추격 매수 (12w 중간 +1.4%, +30% 도달률 22%)</div>
-                <div>· <strong style={{ color: 'var(--accent-yellow)' }}>⚠️ 위험 단계</strong> — Parabolic 위험 (12w 중간 -5.4%, 보유 시 수익실현 검토)</div>
-              </div>
-              <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                백테스트 1,426종목 × 3년 — 백테스트 결과는 옵시디언 기록 참조
-              </div>
+            <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              한 종목이 [상승 초기 + 상승 중] 동시 → 추세 확립 + 안정 진입. [급등 + 위험] 동시 → 강한 모멘텀이지만 추격 위험.
             </div>
-          )}
+          </div>
         </>
       ) : (
         <>
