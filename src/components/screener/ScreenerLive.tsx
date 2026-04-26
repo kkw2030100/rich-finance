@@ -652,7 +652,7 @@ export function ScreenerLive() {
                     <th className="w-8 px-2 py-2.5" />
                     <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
                     <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>단계</th>
-                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>최고 점수</th>
+                    <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>신호 강도</th>
                     <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>시총</th>
                     <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>현재가</th>
                   </tr>
@@ -685,9 +685,16 @@ export function ScreenerLive() {
                         </div>
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <span className="text-sm font-black" style={{ color: s.maxScore >= 16 ? 'var(--accent-red)' : s.maxScore >= 13 ? 'var(--accent-yellow)' : 'var(--text-primary)' }}>
-                          {s.maxScore}
-                        </span>
+                        {(() => {
+                          const strength = Math.round(s.maxScore / 20 * 100);  // 0~20 → 0~100 정규화
+                          const color = strength >= 80 ? 'var(--accent-red)' : strength >= 65 ? 'var(--accent-yellow)' : 'var(--text-primary)';
+                          return (
+                            <>
+                              <span className="text-sm font-black" style={{ color }}>{strength}</span>
+                              <span className="text-[10px] ml-0.5" style={{ color: 'var(--text-muted)' }}>/100</span>
+                            </>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
                         {formatMoney(s.marketCap, s.market)}
