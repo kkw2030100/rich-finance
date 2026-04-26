@@ -8,7 +8,13 @@ import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { ConsensusSection } from '@/components/stocks/ConsensusSection';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
-import { CandleChart } from '@/components/stocks/CandleChart';
+import dynamic from 'next/dynamic';
+
+// lightweight-charts는 SSR 호환 안 됨 — 클라이언트 전용 동적 import
+const CandleChart = dynamic(
+  () => import('@/components/stocks/CandleChart').then(m => m.CandleChart),
+  { ssr: false, loading: () => <div className="rounded-xl h-[540px] flex items-center justify-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}><span className="text-sm" style={{ color: 'var(--text-muted)' }}>차트 로딩 중...</span></div> }
+);
 
 export function StockDetailLive({ code }: { code: string }) {
   const [data, setData] = useState<StockDetailResponse | null>(null);
