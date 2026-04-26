@@ -146,7 +146,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   const analystLinesRef = useRef<IPriceLine[]>([]);
   const targetRangeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const scoreSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const [scoreHistory, setScoreHistory] = useState<Array<{ date: string; total: number }>>([]);
+  const [scoreHistory, setScoreHistory] = useState<Array<{ date: string; total: number; l1?: number; l2?: number; l3?: number; l4?: number; l5?: number; l6?: number }>>([]);
   const [analystPoints, setAnalystPoints] = useState<AnalystPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<AnalystPoint | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -301,7 +301,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       crosshairMarkerVisible: false,
     });
 
-    // 종합점수 시리즈 (좌측 Y축, 0~100)
+    // 종합점수 시리즈 (좌측 Y축) — 데이터 범위에 맞게 자동 스케일
     scoreSeriesRef.current = chart.addSeries(LineSeries, {
       color: '#facc15', // 노랑
       lineWidth: 2,
@@ -309,12 +309,6 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       lastValueVisible: true,
       priceScaleId: 'left',
       priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
-    });
-    // 0~100 범위 강제
-    scoreSeriesRef.current.applyOptions({
-      autoscaleInfoProvider: () => ({
-        priceRange: { minValue: 0, maxValue: 100 },
-      }),
     });
 
     // 리사이즈

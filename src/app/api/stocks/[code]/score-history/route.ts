@@ -24,20 +24,22 @@ export async function GET(
     if (isLocalDb()) {
       const db = getDb();
       const rows = db.prepare(`
-        SELECT date, total_score, l1_score, l2_score, l3_score, l4_score
+        SELECT date, total_score, l1_score, l2_score, l3_score, l4_score, l5_score, l6_score
         FROM stock_score_history
         WHERE code = ?
         ORDER BY date DESC
         LIMIT ?
       `).all(code, weeks) as Array<{
-        date: string; total_score: number; l1_score: number;
-        l2_score: number; l3_score: number; l4_score: number;
+        date: string; total_score: number;
+        l1_score: number; l2_score: number; l3_score: number;
+        l4_score: number; l5_score: number; l6_score: number;
       }>;
       return NextResponse.json({
         data: rows.reverse().map(r => ({
           date: r.date,
           total: r.total_score,
-          l1: r.l1_score, l2: r.l2_score, l3: r.l3_score, l4: r.l4_score,
+          l1: r.l1_score, l2: r.l2_score, l3: r.l3_score,
+          l4: r.l4_score, l5: r.l5_score, l6: r.l6_score,
         })),
       });
     }
@@ -45,7 +47,7 @@ export async function GET(
     // Supabase
     const r = await supabase
       .from('stock_score_history')
-      .select('date, total_score, l1_score, l2_score, l3_score, l4_score')
+      .select('date, total_score, l1_score, l2_score, l3_score, l4_score, l5_score, l6_score')
       .eq('code', code)
       .order('date', { ascending: false })
       .limit(weeks);
@@ -53,7 +55,8 @@ export async function GET(
     const data = (r.data || []).reverse().map(d => ({
       date: d.date,
       total: d.total_score,
-      l1: d.l1_score, l2: d.l2_score, l3: d.l3_score, l4: d.l4_score,
+      l1: d.l1_score, l2: d.l2_score, l3: d.l3_score,
+      l4: d.l4_score, l5: d.l5_score, l6: d.l6_score,
     }));
     return NextResponse.json({ data });
   } catch (e) {
