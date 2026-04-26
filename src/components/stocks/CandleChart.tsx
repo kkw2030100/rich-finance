@@ -16,7 +16,41 @@ interface CandleChartProps {
   isUS?: boolean;  // USD 종목 여부 (가격 포맷)
 }
 
+interface AnalystPoint {
+  id: string;
+  x: number; y: number;
+  color: string;
+  isUp: boolean;
+  provider: string;
+  date: string;
+  isoDate: string;
+  targetPrice: number;
+  priceAtAnnouncement: number | null;
+  opinion: string;
+}
+
 type Timeframe = 'D' | 'W' | 'M';
+
+// "26/04/16" → "2026-04-16"
+function parseAnalystDate(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const parts = d.split('/');
+  if (parts.length !== 3) return null;
+  const yy = parseInt(parts[0]);
+  if (isNaN(yy)) return null;
+  const yyyy = yy < 50 ? 2000 + yy : 1900 + yy;
+  return `${yyyy}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+}
+
+// daily는 오름차순 — targetDate 이전 또는 같은 가장 최근 close
+function priceAtDate(daily: PriceRow[], targetDate: string): number | null {
+  let result = null;
+  for (const r of daily) {
+    if (r.date <= targetDate) result = r.close;
+    else break;
+  }
+  return result;
+}
 
 function aggregateBars(daily: PriceRow[], tf: Timeframe): PriceRow[] {
   if (tf === 'D') return daily;
@@ -96,10 +130,13 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
     currentPrice: number | null;
     opinionText?: string;
     currency?: string;
-    analysts?: Array<{ provider: string; targetPrice: number; weight: number; date: string }>;
+    analysts?: Array<{ provider: string; targetPrice: number; weight: number; date: string; opinion?: string }>;
   } | null>(null);
   const targetLineRef = useRef<IPriceLine | null>(null);
   const analystLinesRef = useRef<IPriceLine[]>([]);
+  const [analystPoints, setAnalystPoints] = useState<AnalystPoint[]>([]);
+  const [selectedPoint, setSelectedPoint] = useState<AnalystPoint | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Fetch 600일 일봉
   useEffect(() => {
@@ -258,23 +295,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       });
     }
 
-    // 개별 애널리스트 목표가 (한국 종목만, weight 1 = 최근 1개월)
-    if (!isUS && consensus.analysts && consensus.analysts.length > 0) {
-      const recent = consensus.analysts.filter(a => a.weight === 1).slice(0, 8);
-      for (const a of recent) {
-        if (!a.targetPrice || a.targetPrice <= 0) continue;
-        const above = consensus.currentPrice != null && a.targetPrice >= consensus.currentPrice;
-        const line = candleRef.current.createPriceLine({
-          price: a.targetPrice,
-          color: above ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: false,
-          title: a.provider.slice(0, 4),
-        });
-        analystLinesRef.current.push(line);
-      }
-    }
+    // 개별 애널리스트 목표가는 horizontal line이 아니라 점으로 (오버레이) — 아래 useEffect에서 처리
 
     // 미국 종목: 목표가 High/Low 범위 라인
     if (isUS && consensus.targetPriceHigh && consensus.targetPriceHigh > 0) {
@@ -300,6 +321,58 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       analystLinesRef.current.push(low);
     }
   }, [consensus, daily, isUS]);
+
+  // 애널리스트 점 좌표 계산 (HTML 오버레이) — 한국 종목만 (미국은 개별 데이터 없음)
+  useEffect(() => {
+    if (isUS) { setAnalystPoints([]); return; }
+    if (!chartApiRef.current || !candleRef.current || !consensus?.analysts || daily.length === 0) {
+      setAnalystPoints([]);
+      return;
+    }
+
+    const computePoints = () => {
+      const ts = chartApiRef.current?.timeScale();
+      const series = candleRef.current;
+      if (!ts || !series || !consensus.analysts) return;
+
+      const pts: AnalystPoint[] = [];
+      for (const a of consensus.analysts) {
+        if (!a.targetPrice || a.targetPrice <= 0) continue;
+        const isoDate = parseAnalystDate(a.date);
+        if (!isoDate) continue;
+        const time = dateToTime(isoDate);
+        const x = ts.timeToCoordinate(time);
+        const y = series.priceToCoordinate(a.targetPrice);
+        if (x === null || y === null) continue;
+
+        const announcementPrice = priceAtDate(daily, isoDate);
+        const isUp = announcementPrice != null && a.targetPrice > announcementPrice;
+
+        pts.push({
+          id: `${a.provider}-${a.date}-${a.targetPrice}`,
+          x: Number(x),
+          y: Number(y),
+          color: isUp ? '#22c55e' : '#ef4444',
+          isUp,
+          provider: a.provider,
+          date: a.date,
+          isoDate,
+          targetPrice: a.targetPrice,
+          priceAtAnnouncement: announcementPrice,
+          opinion: a.opinion || '',
+        });
+      }
+      setAnalystPoints(pts);
+    };
+
+    computePoints();
+
+    const ts = chartApiRef.current.timeScale();
+    ts.subscribeVisibleLogicalRangeChange(computePoints);
+    return () => {
+      try { ts.unsubscribeVisibleLogicalRangeChange(computePoints); } catch { /* chart removed */ }
+    };
+  }, [consensus, daily, tf, isUS]);
 
   return (
     <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -377,7 +450,90 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       </div>
 
       {loading && <div className="h-[480px] flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>차트 로딩 중...</div>}
-      <div ref={chartRef} style={{ width: '100%', height: loading ? 0 : 480 }} />
+
+      {/* 차트 + 오버레이 wrapper */}
+      <div ref={wrapperRef} style={{ position: 'relative', width: '100%', height: loading ? 0 : 480 }}
+        onClick={() => setSelectedPoint(null)}>
+        <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* 애널리스트 목표가 점 */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {analystPoints.map(p => (
+            <div key={p.id}
+              onClick={(e) => { e.stopPropagation(); setSelectedPoint(p); }}
+              style={{
+                position: 'absolute',
+                left: p.x - 6,
+                top: p.y - 6,
+                width: 12, height: 12,
+                borderRadius: '50%',
+                background: p.color,
+                border: '2px solid rgba(255,255,255,0.3)',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                boxShadow: selectedPoint?.id === p.id ? `0 0 0 3px ${p.color}40` : 'none',
+                transition: 'box-shadow 0.15s',
+              }}
+              title={`${p.provider} ${p.date}`}
+            />
+          ))}
+        </div>
+
+        {/* 클릭된 점 툴팁 */}
+        {selectedPoint && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              left: Math.min(selectedPoint.x + 14, (wrapperRef.current?.clientWidth || 800) - 230),
+              top: Math.max(selectedPoint.y - 60, 8),
+              width: 220,
+              background: 'var(--bg-card)',
+              border: `1px solid ${selectedPoint.color}80`,
+              borderRadius: 8,
+              padding: 10,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              zIndex: 10,
+              pointerEvents: 'auto',
+            }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{selectedPoint.provider}</span>
+              <button onClick={() => setSelectedPoint(null)}
+                className="text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>✕</button>
+            </div>
+            <div className="space-y-1 text-[11px]">
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-muted)' }}>발표일</span>
+                <span style={{ color: 'var(--text-primary)' }}>{selectedPoint.isoDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-muted)' }}>목표가</span>
+                <span className="font-bold" style={{ color: selectedPoint.color }}>{selectedPoint.targetPrice.toLocaleString()}원</span>
+              </div>
+              {selectedPoint.priceAtAnnouncement != null && (
+                <>
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>당시 주가</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{selectedPoint.priceAtAnnouncement.toLocaleString()}원</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>당시 상승여력</span>
+                    <span style={{ color: selectedPoint.color }}>
+                      {((selectedPoint.targetPrice - selectedPoint.priceAtAnnouncement) / selectedPoint.priceAtAnnouncement * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </>
+              )}
+              {selectedPoint.opinion && (
+                <div className="flex justify-between pt-1" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>의견</span>
+                  <span className="font-semibold" style={{ color: 'var(--accent-yellow)' }}>{selectedPoint.opinion}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
