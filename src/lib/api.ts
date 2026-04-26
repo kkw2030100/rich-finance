@@ -117,21 +117,36 @@ export function formatBillion(n: number): string {
 }
 
 /**
- * 시장별 시총 표시.
- * - KR: 억원 단위 저장 → '조' / '억' 표기
- * - US: 억USD 단위 저장 → $T / $B / $M 표기
- *   (us_yahoo.py에서 marketCap_USD / 10^8 으로 저장 = 억USD)
+ * 시장별 가격 표시.
+ * - KR: 원 (정수)
+ * - US: $X.XX (소수점 2자리)
  */
-export function formatMarketCap(n: number | null | undefined, market: string): string {
+export function formatPrice(n: number | null | undefined, market: string): string {
+  if (n == null) return '-';
+  const m = (market || '').toLowerCase();
+  if (m === 'us') return '$' + n.toFixed(2);
+  return n.toLocaleString() + '원';
+}
+
+/**
+ * 시장별 통화 금액 표시 (시총, 매출, 영업이익, 순이익 등).
+ * 두 시장 모두 '억' 단위로 저장됨 (financials는 raw_value/10^8).
+ * - KR: 억원 단위 → '조' / '억' 표기
+ * - US: 억USD 단위 → $T / $B / $M 표기 (음수도 처리)
+ */
+export function formatMoney(n: number | null | undefined, market: string): string {
   if (n == null || n === 0) return '-';
   const m = (market || '').toLowerCase();
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
   if (m === 'us') {
     // 억USD → $T(=10000), $B(=10), $M(=0.01)
-    if (n >= 10000) return '$' + (n / 10000).toFixed(2) + 'T';
-    if (n >= 10) return '$' + (n / 10).toFixed(1) + 'B';
-    return '$' + Math.round(n * 100).toLocaleString() + 'M';
+    if (abs >= 10000) return sign + '$' + (abs / 10000).toFixed(2) + 'T';
+    if (abs >= 10) return sign + '$' + (abs / 10).toFixed(1) + 'B';
+    return sign + '$' + Math.round(abs * 100).toLocaleString() + 'M';
   }
-  return formatBillion(n);
+  if (abs >= 10000) return sign + (abs / 10000).toFixed(1) + '조';
+  return sign + abs.toLocaleString() + '억';
 }
 
 export function formatPct(n: number | null | undefined): string {

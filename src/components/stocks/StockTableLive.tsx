@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowUpDown, Loader2 } from 'lucide-react';
-import { ScoreItem, formatMarketCap, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
+import { ScoreItem, formatMoney, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
@@ -103,8 +103,8 @@ export function StockTableLive({
                 <th className="text-left px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>종목</th>
                 <th className="px-3 py-2.5"><SortBtn label="점수" sk="score" /></th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="괴리비율" sk="undervalue" /></th>
-                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>순이익증감(억)</th>
-                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>시총증감(억)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>순이익증감</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>시총증감</th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="시총" sk="marketCap" /></th>
                 <th className="px-3 py-2.5 text-right"><SortBtn label="PER(TTM)" sk="per" /></th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>ROE</th>
@@ -139,16 +139,16 @@ export function StockTableLive({
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="text-sm" style={{ color: (stock.niChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {stock.niChange != null ? (stock.niChange >= 0 ? '+' : '') + stock.niChange.toLocaleString() : 'N/A'}
+                        {stock.niChange != null ? (stock.niChange > 0 ? '+' : '') + formatMoney(stock.niChange, stock.market) : 'N/A'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="text-sm" style={{ color: (stock.mcapChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {stock.mcapChange != null ? (stock.mcapChange >= 0 ? '+' : '') + stock.mcapChange.toLocaleString() : 'N/A'}
+                        {stock.mcapChange != null ? (stock.mcapChange > 0 ? '+' : '') + formatMoney(stock.mcapChange, stock.market) : 'N/A'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatMarketCap(stock.marketCap, stock.market)}</div>
+                      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatMoney(stock.marketCap, stock.market)}</div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="text-sm" style={{ color: 'var(--text-primary)' }}>

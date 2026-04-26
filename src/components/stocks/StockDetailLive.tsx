@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, BarChart3, TrendingUp, DollarSign, AlertTriangle, Loader2 } from 'lucide-react';
-import { fetchStockDetail, StockDetailResponse, formatBillion, formatMarketCap, formatPct, getVerdictInfo } from '@/lib/api';
+import { fetchStockDetail, StockDetailResponse, formatMoney, formatPct, getVerdictInfo } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
@@ -200,8 +200,8 @@ export function StockDetailLive({ code }: { code: string }) {
             {[
               { label: 'ROE', value: v.roe ? v.roe.toFixed(1) + '%' : 'N/A' },
               { label: '영업이익률', value: v.opMargin ? v.opMargin.toFixed(1) + '%' : 'N/A' },
-              { label: 'EPS', value: v.eps ? v.eps.toLocaleString() + '원' : 'N/A' },
-              { label: '시가총액', value: formatMarketCap(data.marketCap, data.market) },
+              { label: 'EPS', value: v.eps != null ? v.eps.toLocaleString() + (data.market?.toLowerCase() === 'us' ? ' USD' : '원') : 'N/A' },
+              { label: '시가총액', value: formatMoney(data.marketCap, data.market) },
             ].map(r => (
               <div key={r.label} className="flex justify-between">
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.label}</span>
@@ -228,15 +228,15 @@ export function StockDetailLive({ code }: { code: string }) {
             </div>
             <div className="flex justify-between">
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>TTM 매출</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatBillion(v.ttmRevenue)}</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatMoney(v.ttmRevenue, data.market)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>TTM 영업이익</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatBillion(v.ttmOp)}</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatMoney(v.ttmOp, data.market)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>TTM 순이익</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatBillion(v.ttmNi)}</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatMoney(v.ttmNi, data.market)}</span>
             </div>
           </div>
         </div>
@@ -261,12 +261,12 @@ export function StockDetailLive({ code }: { code: string }) {
                   <td className="px-3 py-2 text-sm" style={{ color: q.isEstimate ? 'var(--accent-yellow)' : 'var(--text-primary)' }}>
                     {q.period}{q.isEstimate ? ' (E)' : ''}
                   </td>
-                  <td className="px-3 py-2 text-sm text-right" style={{ color: 'var(--text-primary)' }}>{formatBillion(q.revenue)}</td>
+                  <td className="px-3 py-2 text-sm text-right" style={{ color: 'var(--text-primary)' }}>{formatMoney(q.revenue, data.market)}</td>
                   <td className="px-3 py-2 text-sm text-right" style={{ color: q.operatingProfit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                    {formatBillion(q.operatingProfit)}
+                    {formatMoney(q.operatingProfit, data.market)}
                   </td>
                   <td className="px-3 py-2 text-sm text-right" style={{ color: q.netIncome >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                    {formatBillion(q.netIncome)}
+                    {formatMoney(q.netIncome, data.market)}
                   </td>
                 </tr>
               ))}

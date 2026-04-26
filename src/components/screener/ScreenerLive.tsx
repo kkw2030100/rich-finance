@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Loader2, ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search, X } from 'lucide-react';
-import { fetchScores, ScoreItem, formatMarketCap, formatPct, deriveTier, getCountry } from '@/lib/api';
+import { fetchScores, ScoreItem, formatMoney, formatPrice, formatPct, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
@@ -539,11 +539,11 @@ export function ScreenerLive() {
                         {s.ret4w >= 0 ? '+' : ''}{s.ret4w.toFixed(1)}%
                       </td>
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {formatMarketCap(s.marketCap, s.market)}
+                        {formatMoney(s.marketCap, s.market)}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <div className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {s.price ? s.price.toLocaleString() + '원' : '-'}
+                          {formatPrice(s.price, s.market)}
                         </div>
                         {s.changePct != null && (
                           <div className="text-[10px] flex items-center justify-end gap-0.5"
@@ -600,8 +600,8 @@ export function ScreenerLive() {
                     )}
                     {mode === 'gap' && (
                       <>
-                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>순이익 증감(억)</th>
-                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>시총 증감(억)</th>
+                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>순이익 증감</th>
+                        <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>시총 증감</th>
                         <th className="text-right px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>괴리율</th>
                       </>
                     )}
@@ -667,10 +667,10 @@ export function ScreenerLive() {
                       {mode === 'gap' && (
                         <>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: (stock.niChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.niChange != null ? (stock.niChange >= 0 ? '+' : '') + stock.niChange.toLocaleString() + '억' : 'N/A'}
+                            {stock.niChange != null ? (stock.niChange >= 0 ? '+' : '') + formatMoney(stock.niChange, stock.market) : 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm" style={{ color: (stock.mcapChange ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {stock.mcapChange != null ? (stock.mcapChange >= 0 ? '+' : '') + stock.mcapChange.toLocaleString() + '억' : 'N/A'}
+                            {stock.mcapChange != null ? (stock.mcapChange >= 0 ? '+' : '') + formatMoney(stock.mcapChange, stock.market) : 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.niGapRatio ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                             {stock.niGapRatio != null ? (stock.niGapRatio > 0 ? '+' : '') + stock.niGapRatio + '%' : 'N/A'}
@@ -711,7 +711,7 @@ export function ScreenerLive() {
                       {mode === 'analyst' && (
                         <>
                           <td className="px-3 py-3 text-right text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {stock.targetPriceWeighted ? stock.targetPriceWeighted.toLocaleString() + '원' : 'N/A'}
+                            {stock.targetPriceWeighted ? formatPrice(stock.targetPriceWeighted, stock.market) : 'N/A'}
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-black" style={{ color: (stock.upside ?? 0) > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                             {stock.upside != null ? (stock.upside > 0 ? '+' : '') + stock.upside + '%' : 'N/A'}
@@ -726,10 +726,10 @@ export function ScreenerLive() {
                       )}
 
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {formatMarketCap(stock.marketCap, stock.market)}
+                        {formatMoney(stock.marketCap, stock.market)}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{(stock.price ?? 0).toLocaleString()}원</div>
+                        <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatPrice(stock.price, stock.market)}</div>
                         <div className="text-[10px] flex items-center justify-end gap-0.5"
                           style={{ color: (stock.changePct ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                           {(stock.changePct ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
