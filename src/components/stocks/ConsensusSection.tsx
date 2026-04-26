@@ -40,7 +40,7 @@ function RatingStars({ rating }: { rating: number }) {
           style={i === full && half ? { clipPath: 'inset(0 50% 0 0)' } : {}}
         />
       ))}
-      <span className="ml-1 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{rating.toFixed(1)}</span>
+      <span className="ml-1 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{(rating ?? 0).toFixed(1)}</span>
     </span>
   );
 }
