@@ -675,10 +675,17 @@ export function ScreenerLive() {
                         <div className="flex flex-wrap gap-1">
                           {(['early','rapid','steady','late'] as Stage[]).filter(st => s.stages.includes(st)).map(st => {
                             const meta = STAGE_META[st];
+                            // 초기 단계는 sub-type 표기 (확신/일봉/주봉)
+                            let subLabel = '';
+                            if (st === 'early') {
+                              if (s.signalTypes.includes('confluence')) subLabel = ' · 확신';
+                              else if (s.signalTypes.includes('daily')) subLabel = ' · 일봉';
+                              else if (s.signalTypes.includes('weekly')) subLabel = ' · 주봉';
+                            }
                             return (
                               <span key={st} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                                 style={{ background: meta.bg, color: meta.color }}>
-                                {meta.emoji} {meta.label}
+                                {meta.emoji} {meta.label}{subLabel}
                               </span>
                             );
                           })}
@@ -724,7 +731,11 @@ export function ScreenerLive() {
           <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
             <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>📊 본격 상승 — 단계 해석 (한 종목이 여러 단계에 동시 속할 수 있음)</div>
             <div className="space-y-1">
-              <div>· <strong style={{ color: STAGE_META.early.color }}>🌱 상승 초기</strong> — Stage 1→2 진입 (주봉 베이스 돌파 / 일봉 MA60 돌파). 분할 매수 첫 진입</div>
+              <div>· <strong style={{ color: STAGE_META.early.color }}>🌱 상승 초기</strong> — Stage 1→2 진입. 분할 매수 첫 진입.
+                <span className="ml-1" style={{ color: 'var(--text-muted)' }}>
+                  서브: <strong>확신</strong>(주봉+일봉 동시) · <strong>일봉</strong>(일봉 MA60 돌파) · <strong>주봉</strong>(주봉 베이스 돌파)
+                </span>
+              </div>
               <div>· <strong style={{ color: STAGE_META.steady.color }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열. 메인 매수 시점 (백테스트 12w 중간 +2.7%, 승률 56%)</div>
               <div>· <strong style={{ color: STAGE_META.rapid.color }}>⚡ 급등 중</strong> — 5W MA 단기 강세. 추격 매수 (12w 중간 +1.4%, +30% 도달 22%)</div>
               <div>· <strong style={{ color: STAGE_META.late.color }}>⚠️ 추격 위험</strong> — Parabolic 단계 (12w 중간 -5.4%, -10%↓ 손실률 44%). 신규 매수 자제, 보유 시 수익실현 검토</div>
