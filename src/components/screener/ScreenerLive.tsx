@@ -270,6 +270,11 @@ export function ScreenerLive() {
     !arraysEqual(tiers, DEFAULT_TIERS) ||
     showFavOnly || search.trim() !== '';
 
+  const enabledCountries = COUNTRIES.filter(c => !c.disabled).map(c => c.key);
+  const allCountriesSelected = enabledCountries.length > 0 && enabledCountries.every(k => countries.includes(k));
+  const allMarketsSelected = MARKETS.every(m => markets.includes(m.key));
+  const allTiersSelected = TIERS.every(t => tiers.includes(t.key));
+
   const Chip = ({ active, disabled, color, onClick, children }: {
     active: boolean; disabled?: boolean; color: string;
     onClick: () => void; children: React.ReactNode;
@@ -352,6 +357,10 @@ export function ScreenerLive() {
       <div className="rounded-xl p-3 mb-3 space-y-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>국가</span>
+          <Chip active={allCountriesSelected} color="#3b82f6"
+            onClick={() => setCountries(allCountriesSelected ? [] : COUNTRIES.filter(c => !c.disabled).map(c => c.key))}>
+            전체
+          </Chip>
           {COUNTRIES.map(c => (
             <Chip key={c.key}
               active={countries.includes(c.key)}
@@ -365,6 +374,10 @@ export function ScreenerLive() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>시장</span>
+          <Chip active={allMarketsSelected} color="#a855f7"
+            onClick={() => setMarkets(allMarketsSelected ? [] : MARKETS.map(m => m.key))}>
+            전체
+          </Chip>
           {MARKETS.map(m => (
             <Chip key={m.key}
               active={markets.includes(m.key)}
@@ -377,6 +390,10 @@ export function ScreenerLive() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>시총</span>
+          <Chip active={allTiersSelected} color="#22c55e"
+            onClick={() => setTiers(allTiersSelected ? [] : TIERS.map(t => t.key))}>
+            전체
+          </Chip>
           {TIERS.map(t => (
             <Chip key={t.key}
               active={tiers.includes(t.key)}
