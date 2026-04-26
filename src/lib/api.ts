@@ -122,6 +122,20 @@ export function formatPct(n: number | null | undefined): string {
   return sign + n.toFixed(1) + '%';
 }
 
+export function deriveTier(marketCap: number | null | undefined, market: string): string {
+  const m = (market || '').toLowerCase();
+  if (m === 'us') return '미국주식';
+  if (!marketCap) return '소형주';
+  if (marketCap >= 50000) return '초대형주';
+  if (marketCap >= 10000) return '대형주';
+  if (marketCap >= 3000) return '중형주';
+  return '소형주';
+}
+
+export function getCountry(market: string): string {
+  return (market || '').toLowerCase() === 'us' ? 'us' : 'kr';
+}
+
 export function getVerdictInfo(verdict: string) {
   switch (verdict) {
     case 'strong_buy': return { label: 'Strong Buy', color: '#00C853' };

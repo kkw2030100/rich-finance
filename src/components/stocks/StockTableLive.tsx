@@ -1,49 +1,72 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
-import { fetchScores, ScoreItem, formatBillion, formatPct, getVerdictInfo } from '@/lib/api';
+import { ArrowUpDown, Loader2 } from 'lucide-react';
+import { ScoreItem, formatBillion, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
 type SortKey = 'score' | 'undervalue' | 'per' | 'marketCap';
 
-const TIERS = [
-  { key: 'all', label: '전체' },
-  { key: '초대형주', label: '초대형 5조+' },
-  { key: '대형주', label: '대형 1~5조' },
-  { key: '중형주', label: '중형 3천억~1조' },
-  { key: '소형주', label: '소형 ~3천억' },
-  { key: '미국주식', label: '미국' },
-];
+interface StockTableLiveProps {
+  data: ScoreItem[];
+  loading?: boolean;
+  countries?: string[];
+  markets?: string[];
+  tiers?: string[];
+  showFavOnly?: boolean;
+  search?: string;
+}
 
-const MARKETS = [
-  { key: 'all', label: '전체' },
-  { key: 'kospi', label: 'KOSPI' },
-  { key: 'kosdaq', label: 'KOSDAQ' },
-  { key: 'us', label: 'US' },
-];
-
-export function StockTableLive() {
-  const [data, setData] = useState<ScoreItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function StockTableLive({
+  data,
+  loading = false,
+  countries = [],
+  markets = [],
+  tiers = [],
+  showFavOnly = false,
+  search = '',
+}: StockTableLiveProps) {
   const [sortKey, setSortKey] = useState<SortKey>('undervalue');
-  const [filterMarket, setFilterMarket] = useState('all');
-  const [filterTier, setFilterTier] = useState('all');
-  const [showFavOnly, setShowFavOnly] = useState(false);
   const { toggle, isFavorite, favorites } = useFavorites();
 
-  useEffect(() => {
-    setLoading(true);
-    fetchScores({ market: filterMarket, sort: sortKey, limit: 200, tier: filterTier })
-      .then(res => { setData(res.data); setError(null); })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [filterMarket, sortKey, filterTier]);
+  const filtered = useMemo(() => {
+    return data.filter(s => {
+      const country = getCountry(s.market);
+      const market = (s.market || '').toLowerCase();
+      const tier = deriveTier(s.marketCap, s.market);
 
-  const filtered = showFavOnly ? data.filter(s => favorites.includes(s.code)) : data;
+      if (countries.length > 0 && !countries.includes(country)) return false;
+      if (markets.length > 0 && !markets.includes(market)) return false;
+      if (tiers.length > 0 && !tiers.includes(tier)) return false;
+      if (showFavOnly && !favorites.includes(s.code)) return false;
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        if (!s.code.toLowerCase().includes(q) && !s.name.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [data, countries, markets, tiers, showFavOnly, search, favorites]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    switch (sortKey) {
+      case 'score':
+        arr.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        break;
+      case 'undervalue':
+        arr.sort((a, b) => (b.niGapRatio ?? b.undervalueIndex ?? -Infinity) - (a.niGapRatio ?? a.undervalueIndex ?? -Infinity));
+        break;
+      case 'per':
+        arr.sort((a, b) => (a.perTtm ?? Infinity) - (b.perTtm ?? Infinity));
+        break;
+      case 'marketCap':
+        arr.sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
+        break;
+    }
+    return arr;
+  }, [filtered, sortKey]);
 
   const SortBtn = ({ label, sk }: { label: string; sk: SortKey }) => (
     <button onClick={() => setSortKey(sk)}
@@ -62,58 +85,19 @@ export function StockTableLive() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-xl p-6 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--accent-red)' }}>
-        <p className="text-sm" style={{ color: 'var(--accent-red)' }}>데이터 로딩 실패: {error}</p>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>mock 데이터로 전환하려면 페이지를 새로고침하세요</p>
-      </div>
-    );
-  }
-
   return (
     <div>
-      {/* Filters */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {MARKETS.map(m => (
-          <button key={m.key} onClick={() => setFilterMarket(m.key)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            style={{
-              background: filterMarket === m.key ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
-              color: filterMarket === m.key ? 'var(--accent-blue)' : 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-            }}>
-            {m.label}
-          </button>
-        ))}
-        <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
-        {TIERS.map(t => (
-          <button key={t.key} onClick={() => setFilterTier(t.key)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            style={{
-              background: filterTier === t.key ? 'rgba(168,85,247,0.15)' : 'var(--bg-card)',
-              color: filterTier === t.key ? '#a855f7' : 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-            }}>
-            {t.label}
-          </button>
-        ))}
-        <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
-        <button onClick={() => setShowFavOnly(!showFavOnly)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-          style={{
-            background: showFavOnly ? 'rgba(250,204,21,0.15)' : 'var(--bg-card)',
-            color: showFavOnly ? '#facc15' : 'var(--text-secondary)',
-            border: '1px solid var(--border)',
-          }}>
-          관심종목{favorites.length > 0 && ` (${favorites.length})`}
-        </button>
-        <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
-          {filtered.length}개 종목
-        </span>
+      <div className="mb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+        <span style={{ color: 'var(--accent-blue)' }}>{sorted.length}개</span>
+        <span> / 전체 {data.length}개</span>
       </div>
 
-      {/* Table */}
+      {sorted.length === 0 ? (
+        <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+          <p className="text-sm">필터 조건에 맞는 종목이 없습니다.</p>
+          <p className="text-xs mt-1">필터를 변경하거나 초기화해 보세요.</p>
+        </div>
+      ) : (
       <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
           <table className="w-full min-w-[950px] sticky-header">
             <thead>
@@ -131,7 +115,7 @@ export function StockTableLive() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((stock, i) => {
+              {sorted.map((stock, i) => {
                 const vi = getVerdictInfo(stock.verdict);
                 return (
                   <tr key={stock.code} className="card-hover" style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
@@ -190,6 +174,7 @@ export function StockTableLive() {
             </tbody>
           </table>
       </div>
+      )}
     </div>
   );
 }

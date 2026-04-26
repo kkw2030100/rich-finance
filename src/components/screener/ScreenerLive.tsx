@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { Loader2, ArrowUpRight, ArrowDownRight, Star, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search } from 'lucide-react';
-import { formatBillion, formatPct } from '@/lib/api';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { Loader2, ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search, X } from 'lucide-react';
+import { fetchScores, ScoreItem, formatBillion, formatPct, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
@@ -20,6 +21,32 @@ const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; colo
   { key: 'analyst', label: '전문가 매수의견', desc: '증권사 목표가 대비 현재가가 낮은 종목', icon: Users, color: 'var(--accent-blue)' },
 ];
 
+const COUNTRIES: { key: string; label: string; disabled?: boolean }[] = [
+  { key: 'kr', label: '🇰🇷 한국' },
+  { key: 'us', label: '🇺🇸 미국' },
+  { key: 'jp', label: '🇯🇵 일본', disabled: true },
+  { key: 'cn', label: '🇨🇳 중국', disabled: true },
+];
+
+const MARKETS = [
+  { key: 'kospi', label: 'KOSPI' },
+  { key: 'kosdaq', label: 'KOSDAQ' },
+  { key: 'us', label: 'US' },
+];
+
+const TIERS = [
+  { key: '초대형주', label: '초대형 5조+' },
+  { key: '대형주', label: '대형 1~5조' },
+  { key: '중형주', label: '중형 3천억~1조' },
+  { key: '소형주', label: '소형 ~3천억' },
+  { key: '미국주식', label: '미국' },
+];
+
+const DEFAULT_COUNTRIES = ['kr'];
+const DEFAULT_MARKETS = ['kospi'];
+const DEFAULT_TIERS = ['초대형주'];
+const DEFAULT_MODE: Mode = 'total';
+
 interface BreakoutItem {
   code: string; name: string; market: string;
   score: number; boxPos: number; maDiff: number;
@@ -34,7 +61,6 @@ interface ScreenerItem {
   perTtm: number | null; porTtm: number | null; psrTtm: number | null;
   ttmNi: number; ttmOp: number; ttmRevenue: number;
   mcapChange: number | null;
-  // backend fields
   niChange: number | null; niGapRatio: number | null;
   turnaround: boolean; deficitTurn: boolean;
   uiQuadrant: string | null; uiIndex: number | null;
@@ -55,58 +81,358 @@ function getQuadrantColor(q: string | null) {
   }
 }
 
+function toggle<T>(arr: T[], v: T): T[] {
+  return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
+}
+
+function arraysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
 export function ScreenerLive() {
-  const [mode, setMode] = useState<Mode>('all');
-  const [data, setData] = useState<ScreenerItem[]>([]);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  const [mode, setMode] = useState<Mode>(DEFAULT_MODE);
+  const [allScoreData, setAllScoreData] = useState<ScoreItem[]>([]);
   const [breakoutData, setBreakoutData] = useState<BreakoutItem[]>([]);
   const [breakoutMeta, setBreakoutMeta] = useState<{ asOf: string | null; newCount: number; keptCount: number }>({ asOf: null, newCount: 0, keptCount: 0 });
-  const [loading, setLoading] = useState(true);
-  const { toggle, isFavorite } = useFavorites();
+  const [modeData, setModeData] = useState<Record<string, ScreenerItem[]>>({ total: [], ttm: [], gap: [], composite: [], analyst: [] });
+  const [dataLoaded, setDataLoaded] = useState(false);
 
+  const [countries, setCountries] = useState<string[]>(DEFAULT_COUNTRIES);
+  const [markets, setMarkets] = useState<string[]>(DEFAULT_MARKETS);
+  const [tiers, setTiers] = useState<string[]>(DEFAULT_TIERS);
+  const [showFavOnly, setShowFavOnly] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const [hydrated, setHydrated] = useState(false);
+  const prevModeRef = useRef<Mode | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const { toggle: toggleFav, isFavorite, favorites } = useFavorites();
+
+  // ---- URL 하이드레이션 (마운트 1회) ----
   useEffect(() => {
-    if (mode === 'all') {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    if (mode === 'breakout') {
-      fetch('/api/breakout?limit=100')
-        .then(r => r.json())
-        .then(d => {
-          setBreakoutData(d.data || []);
-          setBreakoutMeta({ asOf: d.asOf, newCount: d.newCount || 0, keptCount: d.keptCount || 0 });
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
+    const m = searchParams.get('mode') as Mode | null;
+    if (m && MODES.find(mm => mm.key === m)) setMode(m);
+    const c = searchParams.get('c');
+    if (c) setCountries(c.split(',').filter(Boolean));
+    const mk = searchParams.get('m');
+    if (mk) setMarkets(mk.split(',').filter(Boolean));
+    const t = searchParams.get('t');
+    if (t) setTiers(t.split(',').filter(Boolean));
+    if (searchParams.get('fav') === '1') setShowFavOnly(true);
+    const q = searchParams.get('q');
+    if (q) setSearch(q);
+    prevModeRef.current = (m && MODES.find(mm => mm.key === m)) ? m : DEFAULT_MODE;
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- 모든 모드 데이터 prefetch (마운트 1회) ----
+  useEffect(() => {
+    Promise.all([
+      fetchScores({ limit: 500 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
+      fetch('/api/breakout?limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/undervalued?mode=composite&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/undervalued?mode=analyst&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+    ]).then(([scores, breakout, total, ttm, gap, composite, analyst]) => {
+      setAllScoreData(scores);
+      setBreakoutData(breakout.data || []);
+      setBreakoutMeta({ asOf: breakout.asOf ?? null, newCount: breakout.newCount || 0, keptCount: breakout.keptCount || 0 });
+      setModeData({
+        total: total.data || [],
+        ttm: ttm.data || [],
+        gap: gap.data || [],
+        composite: composite.data || [],
+        analyst: analyst.data || [],
+      });
+      setDataLoaded(true);
+    });
+  }, []);
+
+  // ---- URL 동기화 (state → URL) ----
+  useEffect(() => {
+    if (!hydrated) return;
+    const params = new URLSearchParams();
+    if (mode !== DEFAULT_MODE) params.set('mode', mode);
+    if (!arraysEqual(countries, DEFAULT_COUNTRIES)) params.set('c', countries.join(','));
+    if (!arraysEqual(markets, DEFAULT_MARKETS)) params.set('m', markets.join(','));
+    if (!arraysEqual(tiers, DEFAULT_TIERS)) params.set('t', tiers.join(','));
+    if (showFavOnly) params.set('fav', '1');
+    if (search.trim()) params.set('q', search.trim());
+
+    const queryString = params.toString();
+    const url = queryString ? `${pathname}?${queryString}` : pathname;
+
+    if (prevModeRef.current !== null && prevModeRef.current !== mode) {
+      router.push(url, { scroll: false });
     } else {
-      fetch(`/api/undervalued?mode=${mode}&limit=50`)
-        .then(r => r.json())
-        .then(d => setData(d.data || []))
-        .catch(() => {})
-        .finally(() => setLoading(false));
+      router.replace(url, { scroll: false });
     }
-  }, [mode]);
+    prevModeRef.current = mode;
+  }, [mode, countries, markets, tiers, showFavOnly, search, hydrated, pathname, router]);
+
+  // ---- 외부 클릭으로 dropdown 닫기 ----
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (
+        inputRef.current && !inputRef.current.contains(e.target as Node) &&
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  function passes(item: { code: string; name: string; market: string; marketCap?: number | null; tier?: string }) {
+    const itemCountry = getCountry(item.market);
+    const itemMarket = (item.market || '').toLowerCase();
+    const itemTier = item.tier || deriveTier(item.marketCap ?? null, item.market);
+
+    if (countries.length > 0 && !countries.includes(itemCountry)) return false;
+    if (markets.length > 0 && !markets.includes(itemMarket)) return false;
+    if (tiers.length > 0 && !tiers.includes(itemTier)) return false;
+    if (showFavOnly && !favorites.includes(item.code)) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!item.code.toLowerCase().includes(q) && !item.name.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }
+
+  const filteredBreakout = useMemo(
+    () => breakoutData.filter(passes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [breakoutData, countries, markets, tiers, showFavOnly, search, favorites]
+  );
+  const filteredData = useMemo(
+    () => (modeData[mode] || []).filter(passes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modeData, mode, countries, markets, tiers, showFavOnly, search, favorites]
+  );
+
+  // ---- 모드별 결과 개수 (badge) ----
+  const counts = useMemo(() => {
+    const result: Record<Mode, number> = {
+      all: allScoreData.filter(passes).length,
+      breakout: breakoutData.filter(passes).length,
+      total: (modeData.total || []).filter(passes).length,
+      ttm: (modeData.ttm || []).filter(passes).length,
+      gap: (modeData.gap || []).filter(passes).length,
+      composite: (modeData.composite || []).filter(passes).length,
+      analyst: (modeData.analyst || []).filter(passes).length,
+    };
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, search, favorites]);
+
+  // ---- 자동완성 후보 ----
+  const suggestions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return allScoreData
+      .filter(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [allScoreData, search]);
+
+  const onSearchEnter = () => {
+    if (suggestions.length === 0) return;
+    setShowDropdown(false);
+    router.push(`/stocks/${suggestions[0].code}`);
+  };
 
   const current = MODES.find(m => m.key === mode)!;
+  const isDirty =
+    !arraysEqual(countries, DEFAULT_COUNTRIES) ||
+    !arraysEqual(markets, DEFAULT_MARKETS) ||
+    !arraysEqual(tiers, DEFAULT_TIERS) ||
+    showFavOnly || search.trim() !== '';
+
+  const Chip = ({ active, disabled, color, onClick, children }: {
+    active: boolean; disabled?: boolean; color: string;
+    onClick: () => void; children: React.ReactNode;
+  }) => (
+    <button
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+      style={{
+        background: active ? `${color}20` : 'var(--bg-card)',
+        color: disabled ? 'var(--text-muted)' : active ? color : 'var(--text-secondary)',
+        border: `1px solid ${active ? `${color}60` : 'var(--border)'}`,
+        opacity: disabled ? 0.4 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {children}
+    </button>
+  );
 
   return (
     <div>
-      {/* Mode Tabs */}
-      <div className="flex gap-2 mb-1 overflow-x-auto">
-        {MODES.map(m => (
-          <button key={m.key} onClick={() => setMode(m.key)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
+      {/* 검색 바 + 자동완성 */}
+      <div className="flex justify-end mb-3">
+        <div className="relative w-full max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 z-10" style={{ color: 'var(--text-muted)' }} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setShowDropdown(true); }}
+            onFocus={() => setShowDropdown(true)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') onSearchEnter();
+              if (e.key === 'Escape') setShowDropdown(false);
+            }}
+            placeholder="종목명 또는 코드 검색"
+            className="w-full pl-9 pr-8 py-2 rounded-lg text-xs"
             style={{
-              background: mode === m.key ? `${m.color}15` : 'var(--bg-card)',
-              color: mode === m.key ? m.color : 'var(--text-secondary)',
-              border: `1px solid ${mode === m.key ? `${m.color}40` : 'var(--border)'}`,
-            }}>
-            <m.icon size={16} />
-            {m.label}
-          </button>
-        ))}
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              outline: 'none',
+            }}
+          />
+          {search && (
+            <button onClick={() => { setSearch(''); setShowDropdown(false); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer z-10"
+              style={{ color: 'var(--text-muted)' }}>
+              <X size={14} />
+            </button>
+          )}
+          {showDropdown && suggestions.length > 0 && (
+            <div ref={dropdownRef}
+              className="absolute top-full left-0 right-0 mt-1 rounded-lg shadow-xl overflow-hidden z-50"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              {suggestions.map((s, i) => (
+                <Link key={s.code} href={`/stocks/${s.code}`}
+                  onClick={() => setShowDropdown(false)}
+                  className="flex items-center justify-between px-3 py-2 transition-colors"
+                  style={{
+                    borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                    background: i === 0 ? 'var(--bg-secondary)' : 'transparent',
+                  }}>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{s.code} · {s.market.toUpperCase()}</span>
+                  </div>
+                  <span className="text-[10px] ml-2 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                    {(s.price ?? 0).toLocaleString()}
+                  </span>
+                </Link>
+              ))}
+              <div className="px-3 py-1.5 text-[10px]" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+                Enter = 첫번째 종목 이동 · Esc = 닫기
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>{current.desc}</p>
+
+      {/* 계층 필터: 국가 → 시장 → 시총 */}
+      <div className="rounded-xl p-3 mb-3 space-y-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>국가</span>
+          {COUNTRIES.map(c => (
+            <Chip key={c.key}
+              active={countries.includes(c.key)}
+              disabled={c.disabled}
+              color="#3b82f6"
+              onClick={() => setCountries(toggle(countries, c.key))}>
+              {c.label}{c.disabled && ' (예정)'}
+            </Chip>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>시장</span>
+          {MARKETS.map(m => (
+            <Chip key={m.key}
+              active={markets.includes(m.key)}
+              color="#a855f7"
+              onClick={() => setMarkets(toggle(markets, m.key))}>
+              {m.label}
+            </Chip>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-semibold w-12" style={{ color: 'var(--text-muted)' }}>시총</span>
+          {TIERS.map(t => (
+            <Chip key={t.key}
+              active={tiers.includes(t.key)}
+              color="#22c55e"
+              onClick={() => setTiers(toggle(tiers, t.key))}>
+              {t.label}
+            </Chip>
+          ))}
+          <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
+          <Chip
+            active={showFavOnly}
+            color="#facc15"
+            onClick={() => setShowFavOnly(!showFavOnly)}>
+            ⭐ 관심종목{favorites.length > 0 && ` (${favorites.length})`}
+          </Chip>
+          {isDirty && (
+            <button onClick={() => {
+              setCountries(DEFAULT_COUNTRIES);
+              setMarkets(DEFAULT_MARKETS);
+              setTiers(DEFAULT_TIERS);
+              setShowFavOnly(false);
+              setSearch('');
+            }}
+              className="ml-auto px-2.5 py-1.5 rounded-lg text-[11px] cursor-pointer"
+              style={{ color: 'var(--text-muted)', border: '1px dashed var(--border)' }}>
+              필터 초기화
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Mode Tabs (with badge) */}
+      <div className="flex gap-2 mb-1 overflow-x-auto">
+        {MODES.map(m => {
+          const count = counts[m.key];
+          const active = mode === m.key;
+          return (
+            <button key={m.key} onClick={() => setMode(m.key)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
+              style={{
+                background: active ? `${m.color}15` : 'var(--bg-card)',
+                color: active ? m.color : 'var(--text-secondary)',
+                border: `1px solid ${active ? `${m.color}40` : 'var(--border)'}`,
+              }}>
+              <m.icon size={16} />
+              {m.label}
+              {dataLoaded && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{
+                    background: active ? `${m.color}25` : 'var(--bg-secondary)',
+                    color: count > 0 ? (active ? m.color : 'var(--text-secondary)') : 'var(--text-muted)',
+                    minWidth: '20px',
+                    textAlign: 'center',
+                  }}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>{current.desc}</p>
 
       {mode !== 'all' && mode !== 'breakout' && (
         <p className="text-[10px] mb-3" style={{ color: 'var(--text-muted)' }}>
@@ -115,8 +441,16 @@ export function ScreenerLive() {
       )}
 
       {mode === 'all' ? (
-        <StockTableLive />
-      ) : loading ? (
+        <StockTableLive
+          data={allScoreData}
+          loading={!dataLoaded}
+          countries={countries}
+          markets={markets}
+          tiers={tiers}
+          showFavOnly={showFavOnly}
+          search={search}
+        />
+      ) : !dataLoaded ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-blue)' }} />
           <span className="ml-2 text-sm" style={{ color: 'var(--text-muted)' }}>스크리닝 중...</span>
@@ -124,7 +458,8 @@ export function ScreenerLive() {
       ) : mode === 'breakout' ? (
         <>
           <div className="mb-3 text-xs flex items-center gap-3" style={{ color: 'var(--text-muted)' }}>
-            <span style={{ color: current.color }}>{breakoutData.length}개 종목</span>
+            <span style={{ color: current.color }}>{filteredBreakout.length}개</span>
+            <span>/ 전체 {breakoutData.length}개</span>
             {breakoutMeta.asOf && <span>· 기준일 {breakoutMeta.asOf}</span>}
             {breakoutMeta.newCount > 0 && (
               <span style={{ color: 'var(--accent-green)' }}>🆕 신규 {breakoutMeta.newCount}</span>
@@ -134,11 +469,11 @@ export function ScreenerLive() {
             )}
           </div>
 
-          {breakoutData.length === 0 ? (
+          {filteredBreakout.length === 0 ? (
             <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
               <Rocket size={32} className="mx-auto mb-2 opacity-40" />
-              <p className="text-sm">현재 본격 상승 가능 신호 종목이 없습니다.</p>
-              <p className="text-xs mt-1">매일 16:30 한국 시장 마감 후 자동 스캔됩니다.</p>
+              <p className="text-sm">{breakoutData.length === 0 ? '현재 본격 상승 가능 신호 종목이 없습니다.' : '필터 조건에 맞는 종목이 없습니다.'}</p>
+              <p className="text-xs mt-1">{breakoutData.length === 0 ? '매일 16:30 한국 시장 마감 후 자동 스캔됩니다.' : '필터를 변경하거나 초기화해 보세요.'}</p>
             </div>
           ) : (
             <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -157,10 +492,10 @@ export function ScreenerLive() {
                   </tr>
                 </thead>
                 <tbody>
-                  {breakoutData.map((s, i) => (
+                  {filteredBreakout.map((s, i) => (
                     <tr key={s.code} className="card-hover" style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                       <td className="px-2 py-3 text-center">
-                        <FavoriteButton active={isFavorite(s.code)} onClick={() => toggle(s.code)} size={14} />
+                        <FavoriteButton active={isFavorite(s.code)} onClick={() => toggleFav(s.code)} size={14} />
                       </td>
                       <td className="px-3 py-3">
                         <Link href={`/stocks/${s.code}`}>
@@ -235,9 +570,16 @@ export function ScreenerLive() {
       ) : (
         <>
           <div className="mb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-            <span style={{ color: current.color }}>{data.length}개</span> 종목
+            <span style={{ color: current.color }}>{filteredData.length}개</span>
+            <span> / 전체 {(modeData[mode] || []).length}개</span>
           </div>
 
+          {filteredData.length === 0 ? (
+            <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              <p className="text-sm">필터 조건에 맞는 종목이 없습니다.</p>
+              <p className="text-xs mt-1">필터를 변경하거나 초기화해 보세요.</p>
+            </div>
+          ) : (
           <div className="rounded-xl overflow-auto max-h-[70vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
               <table className="w-full min-w-[800px] sticky-header">
                 <thead>
@@ -283,10 +625,10 @@ export function ScreenerLive() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((stock, i) => (
+                  {filteredData.map((stock, i) => (
                     <tr key={stock.code} className="card-hover" style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                       <td className="px-2 py-3 text-center">
-                        <FavoriteButton active={isFavorite(stock.code)} onClick={() => toggle(stock.code)} size={14} />
+                        <FavoriteButton active={isFavorite(stock.code)} onClick={() => toggleFav(stock.code)} size={14} />
                       </td>
                       <td className="px-3 py-3">
                         <Link href={`/stocks/${stock.code}`}>
@@ -394,6 +736,7 @@ export function ScreenerLive() {
                 </tbody>
               </table>
           </div>
+          )}
 
           <div className="text-center text-[10px] py-3" style={{ color: 'var(--text-muted)' }}>
             본 분석은 투자 자문이 아닌 정보 제공 목적이며, 투자 판단의 책임은 이용자 본인에게 있습니다.
