@@ -675,12 +675,15 @@ export function ScreenerLive() {
                         <div className="flex flex-wrap gap-1">
                           {(['early','rapid','steady','late'] as Stage[]).filter(st => s.stages.includes(st)).map(st => {
                             const meta = STAGE_META[st];
-                            // 초기 단계는 sub-type 표기 (확신/일봉/주봉)
+                            // 단계별 sub-type 표기 (일봉/주봉/둘 다)
                             let subLabel = '';
                             if (st === 'early') {
-                              if (s.signalTypes.includes('confluence')) subLabel = ' · 확신';
+                              if (s.signalTypes.includes('confluence')) subLabel = ' · 둘 다';
                               else if (s.signalTypes.includes('daily')) subLabel = ' · 일봉';
                               else if (s.signalTypes.includes('weekly')) subLabel = ' · 주봉';
+                            } else {
+                              // mid_rapid/mid_steady/late_stage는 현재 주봉 기반만 계산됨
+                              subLabel = ' · 주봉';
                             }
                             return (
                               <span key={st} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -733,7 +736,7 @@ export function ScreenerLive() {
             <div className="space-y-1">
               <div>· <strong style={{ color: STAGE_META.early.color }}>🌱 상승 초기</strong> — Stage 1→2 진입. 분할 매수 첫 진입.
                 <span className="ml-1" style={{ color: 'var(--text-muted)' }}>
-                  서브: <strong>확신</strong>(주봉+일봉 동시) · <strong>일봉</strong>(일봉 MA60 돌파) · <strong>주봉</strong>(주봉 베이스 돌파)
+                  서브: <strong>둘 다</strong>(주봉+일봉 동시) · <strong>일봉</strong>(일봉 MA60 돌파) · <strong>주봉</strong>(주봉 베이스 돌파)
                 </span>
               </div>
               <div>· <strong style={{ color: STAGE_META.steady.color }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열. 메인 매수 시점 (백테스트 12w 중간 +2.7%, 승률 56%)</div>
