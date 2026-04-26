@@ -356,8 +356,9 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
     analystLinesRef.current.forEach(l => candleRef.current?.removePriceLine(l));
     analystLinesRef.current = [];
 
-    // 가중평균 목표가 (굵은 점선, 라벨)
-    if (consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0) {
+    // 한국 종목 가중평균 목표가는 헤더 + 개별 점으로 충분 — horizontal line 제거
+    // 미국 종목은 개별 점이 없으므로 가중평균 라인을 유지
+    if (isUS && consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0) {
       const upsideStr = consensus.upside != null
         ? ` ${consensus.upside >= 0 ? '+' : ''}${consensus.upside.toFixed(0)}%`
         : '';
@@ -370,8 +371,6 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         title: `목표${upsideStr}`,
       });
     }
-
-    // 개별 애널리스트 목표가는 horizontal line이 아니라 점으로 (오버레이) — 아래 useEffect에서 처리
 
     // 미국 종목: 목표가 High/Low 범위 라인
     if (isUS && consensus.targetPriceHigh && consensus.targetPriceHigh > 0) {
