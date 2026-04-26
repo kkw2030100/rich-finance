@@ -26,7 +26,9 @@ const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; colo
 type Stage = 'early' | 'rapid' | 'steady' | 'late';
 const STAGE_OF_TYPE: Record<string, Stage> = {
   confluence: 'early', daily: 'early', weekly: 'early',
-  mid_rapid: 'rapid', mid_steady: 'steady', late_stage: 'late',
+  mid_rapid: 'rapid', mid_rapid_daily: 'rapid',
+  mid_steady: 'steady', mid_steady_daily: 'steady',
+  late_stage: 'late', late_stage_daily: 'late',
 };
 const STAGE_META: Record<Stage, { label: string; emoji: string; color: string; bg: string }> = {
   early:  { label: '초기',  emoji: '🌱', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
@@ -230,7 +232,9 @@ export function ScreenerLive() {
     if (stagedSignals.length > 0) return;  // 이미 받았으면 skip
 
     type BreakoutResp = { data: { code: string; name: string; market: string; score: number; price: number | null; changePct: number | null; marketCap: number | null }[]; asOf?: string };
-    const types = ['confluence', 'daily', 'weekly', 'mid_rapid', 'mid_steady', 'late_stage'];
+    const types = ['confluence', 'daily', 'weekly',
+                   'mid_rapid', 'mid_steady', 'late_stage',
+                   'mid_rapid_daily', 'mid_steady_daily', 'late_stage_daily'];
     const handles = types.map(t =>
       cachedFetch<BreakoutResp>(`breakout:${t}`, () =>
         fetch(`/api/breakout?limit=300&type=${t}`).then(r => r.json()).catch(() => ({ data: [] }))
@@ -682,8 +686,13 @@ export function ScreenerLive() {
                               else if (s.signalTypes.includes('daily')) subLabel = ' · 일봉';
                               else if (s.signalTypes.includes('weekly')) subLabel = ' · 주봉';
                             } else {
-                              // mid_rapid/mid_steady/late_stage는 현재 주봉 기반만 계산됨
-                              subLabel = ' · 주봉';
+                              const wKey = st === 'rapid' ? 'mid_rapid' : st === 'steady' ? 'mid_steady' : 'late_stage';
+                              const dKey = wKey + '_daily';
+                              const hasW = s.signalTypes.includes(wKey);
+                              const hasD = s.signalTypes.includes(dKey);
+                              if (hasW && hasD) subLabel = ' · 둘 다';
+                              else if (hasD) subLabel = ' · 일봉';
+                              else if (hasW) subLabel = ' · 주봉';
                             }
                             return (
                               <span key={st} className="text-[10px] font-bold px-2 py-0.5 rounded-full"

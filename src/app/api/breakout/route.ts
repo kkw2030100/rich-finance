@@ -17,7 +17,9 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(params.get('limit') || '50');
     const newOnly = params.get('new_only') === 'true';
     const signalType = (params.get('type') || 'confluence').toLowerCase();
-    const ALLOWED = ['weekly', 'daily', 'confluence', 'mid_rapid', 'mid_steady', 'late_stage'];
+    const ALLOWED = ['weekly', 'daily', 'confluence',
+                     'mid_rapid', 'mid_steady', 'late_stage',
+                     'mid_rapid_daily', 'mid_steady_daily', 'late_stage_daily'];
     const validType = ALLOWED.includes(signalType) ? signalType : 'confluence';
 
     if (!isLocalDb()) {
