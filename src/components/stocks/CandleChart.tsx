@@ -184,7 +184,29 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       },
       rightPriceScale: { borderColor: 'rgba(75, 85, 99, 0.3)', scaleMargins: { top: 0.05, bottom: 0.25 } },
       timeScale: { borderColor: 'rgba(75, 85, 99, 0.3)', timeVisible: false, secondsVisible: false },
-      crosshair: { mode: 1 },
+      crosshair: {
+        mode: 1,
+        vertLine: {
+          labelVisible: true,
+          labelBackgroundColor: '#3b82f6',
+          color: 'rgba(156, 163, 175, 0.5)',
+          width: 1,
+          style: 3, // dashed
+        },
+        horzLine: {
+          labelVisible: true,
+          labelBackgroundColor: '#3b82f6',
+          color: 'rgba(156, 163, 175, 0.5)',
+          width: 1,
+          style: 3,
+        },
+      },
+      localization: {
+        // 가격 라벨 한국 종목은 정수, 미국은 소수점 2자리
+        priceFormatter: isUS
+          ? (p: number) => '$' + p.toFixed(2)
+          : (p: number) => Math.round(p).toLocaleString(),
+      },
     });
     chartApiRef.current = chart;
 
@@ -602,26 +624,35 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         onClick={() => setSelectedPoint(null)}>
         <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
 
-        {/* 애널리스트 목표가 점 */}
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        {/* 애널리스트 목표가 점 — z-index 명시 + hit area 확장 */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
           {analystPoints.map(p => (
             <div key={p.id}
+              onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
               onClick={(e) => { e.stopPropagation(); setSelectedPoint(p); }}
               style={{
                 position: 'absolute',
-                left: p.x - 6,
-                top: p.y - 6,
-                width: 12, height: 12,
+                // 24x24 hit area (실제 점은 가운데 12x12)
+                left: p.x - 12,
+                top: p.y - 12,
+                width: 24, height: 24,
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title={`${p.provider} ${p.date} ${p.targetPrice.toLocaleString()}원`}>
+              <div style={{
+                width: selectedPoint?.id === p.id ? 14 : 12,
+                height: selectedPoint?.id === p.id ? 14 : 12,
                 borderRadius: '50%',
                 background: p.color,
                 border: '2px solid rgba(255,255,255,0.3)',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-                boxShadow: selectedPoint?.id === p.id ? `0 0 0 3px ${p.color}40` : 'none',
-                transition: 'box-shadow 0.15s',
-              }}
-              title={`${p.provider} ${p.date}`}
-            />
+                boxShadow: selectedPoint?.id === p.id ? `0 0 0 3px ${p.color}80` : 'none',
+                transition: 'all 0.15s',
+              }} />
+            </div>
           ))}
         </div>
 
