@@ -13,7 +13,7 @@ type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakou
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; color: string }[] = [
   { key: 'all', label: '전종목', desc: '시장/시총/관심종목 자유 탐색', icon: Search, color: 'var(--accent-blue)' },
-  { key: 'breakout', label: '본격 상승 가능', desc: '베이스 형성 후 박스권 돌파 + 거래량 폭증 — 본격 급등 직전 패턴', icon: Rocket, color: 'var(--accent-red)' },
+  { key: 'breakout', label: '본격 상승 초기', desc: 'Stage 1→2 전환 — 주봉/일봉 MA 돌파 + 거래량 진입', icon: Rocket, color: 'var(--accent-red)' },
   { key: 'total', label: '종합 저평가', desc: '모든 기준을 종합한 점수', icon: Layers, color: 'var(--accent-blue)' },
   { key: 'ttm', label: '지금 싼 종목', desc: '벌고 있는 돈에 비해 가격이 싼 종목', icon: DollarSign, color: 'var(--accent-green)' },
   { key: 'gap', label: '아직 덜 오른 종목', desc: '돈을 더 잘 벌게 됐는데 가격이 안 오른 종목', icon: TrendingUp, color: 'var(--accent-purple)' },
@@ -492,7 +492,7 @@ export function ScreenerLive() {
 
       {mode !== 'all' && mode !== 'breakout' && (
         <p className="text-[10px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          ※ 큐레이션 모드는 한국 종목 기반입니다. 미국 종목은 &apos;전종목&apos; 또는 &apos;본격 상승 가능&apos; 탭에서 확인하세요.
+          ※ 큐레이션 모드는 한국 종목 기반입니다. 미국 종목은 &apos;전종목&apos; 또는 &apos;본격 상승 초기&apos; 탭에서 확인하세요.
         </p>
       )}
 
@@ -549,7 +549,7 @@ export function ScreenerLive() {
           {filteredBreakout.length === 0 ? (
             <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
               <Rocket size={32} className="mx-auto mb-2 opacity-40" />
-              <p className="text-sm">{breakoutData.length === 0 ? '현재 본격 상승 가능 신호 종목이 없습니다.' : '필터 조건에 맞는 종목이 없습니다.'}</p>
+              <p className="text-sm">{breakoutData.length === 0 ? '현재 본격 상승 초기 신호 종목이 없습니다.' : '필터 조건에 맞는 종목이 없습니다.'}</p>
               <p className="text-xs mt-1">{breakoutData.length === 0 ? '매일 16:30 한국 시장 마감 후 자동 스캔됩니다.' : '필터를 변경하거나 초기화해 보세요.'}</p>
             </div>
           ) : (

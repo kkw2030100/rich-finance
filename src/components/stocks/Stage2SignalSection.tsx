@@ -64,7 +64,7 @@ export function Stage2SignalSection({ code }: { code: string }) {
           </div>
           <div>
             <div className="text-xs font-semibold mb-0.5" style={{ color: scoreColor }}>
-              🚀 본격 상승 가능 신호 — {scoreLabel}
+              🚀 본격 상승 초기 신호 — {scoreLabel}
             </div>
             <div className="text-2xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>
               {s.score} <span className="text-sm font-normal" style={{ color: 'var(--text-muted)' }}>/ 20점</span>
