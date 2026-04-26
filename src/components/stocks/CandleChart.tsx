@@ -134,6 +134,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   } | null>(null);
   const targetLineRef = useRef<IPriceLine | null>(null);
   const analystLinesRef = useRef<IPriceLine[]>([]);
+  const targetRangeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const [analystPoints, setAnalystPoints] = useState<AnalystPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<AnalystPoint | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -217,6 +218,15 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         crosshairMarkerVisible: false,
       })
     );
+
+    // 보이지 않는 시리즈 — 애널리스트 목표가 포함하게 가격 스케일 확장용
+    targetRangeSeriesRef.current = chart.addSeries(LineSeries, {
+      color: 'rgba(0,0,0,0)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
 
     // 리사이즈
     const ro = new ResizeObserver(entries => {
@@ -390,39 +400,75 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
 
   // 애널리스트 점 좌표 계산 (HTML 오버레이) — 한국 종목만 (미국은 개별 데이터 없음)
   useEffect(() => {
-    if (isUS) { setAnalystPoints([]); return; }
+    if (isUS) {
+      setAnalystPoints([]);
+      targetRangeSeriesRef.current?.setData([]);
+      return;
+    }
     if (!chartApiRef.current || !candleRef.current || !consensus?.analysts || daily.length === 0) {
       setAnalystPoints([]);
+      targetRangeSeriesRef.current?.setData([]);
       return;
     }
 
+    // 1) 가격 스케일 확장용 invisible series — 모든 목표가 포함
+    const validAnalysts = consensus.analysts
+      .map(a => ({ ...a, isoDate: parseAnalystDate(a.date) }))
+      .filter(a => a.isoDate && a.targetPrice && a.targetPrice > 0);
+
+    if (targetRangeSeriesRef.current && validAnalysts.length > 0) {
+      // 같은 시간 중복 제거 + 정렬 (lightweight-charts 요구)
+      const dataMap = new Map<number, number>();
+      for (const a of validAnalysts) {
+        const t = dateToTime(a.isoDate!);
+        // 같은 시간 = 더 큰 값 우선 (안전망)
+        const existing = dataMap.get(t);
+        if (!existing || a.targetPrice > existing) dataMap.set(t, a.targetPrice);
+      }
+      // 또한 2 가지 가격 (min, max)을 첫/마지막 시간에 추가 → 가격 범위 강제 확장
+      const minTarget = Math.min(...validAnalysts.map(a => a.targetPrice));
+      const maxTarget = Math.max(...validAnalysts.map(a => a.targetPrice));
+      const sortedDaily = [...daily].sort((a, b) => a.date.localeCompare(b.date));
+      if (sortedDaily.length >= 2) {
+        const firstT = dateToTime(sortedDaily[0].date);
+        const lastT = dateToTime(sortedDaily[sortedDaily.length - 1].date);
+        if (!dataMap.has(firstT)) dataMap.set(firstT, minTarget);
+        if (!dataMap.has(lastT)) dataMap.set(lastT, maxTarget);
+      }
+      const seriesData = [...dataMap.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([t, v]) => ({ time: t as UTCTimestamp, value: v }));
+      targetRangeSeriesRef.current.setData(seriesData);
+    }
+
+    // 2) 점 좌표 계산 (가격 스케일 확장 후)
     const computePoints = () => {
       const ts = chartApiRef.current?.timeScale();
       const series = candleRef.current;
-      if (!ts || !series || !consensus.analysts) return;
+      if (!ts || !series) return;
 
       const pts: AnalystPoint[] = [];
-      for (const a of consensus.analysts) {
-        if (!a.targetPrice || a.targetPrice <= 0) continue;
-        const isoDate = parseAnalystDate(a.date);
-        if (!isoDate) continue;
-        const time = dateToTime(isoDate);
+      for (const a of validAnalysts) {
+        const time = dateToTime(a.isoDate!);
         const x = ts.timeToCoordinate(time);
         const y = series.priceToCoordinate(a.targetPrice);
         if (x === null || y === null) continue;
+        // 차트 외부는 skip (안전망)
+        const yNum = Number(y);
+        if (yNum < 0 || yNum > 480) continue;
 
-        const announcementPrice = priceAtDate(daily, isoDate);
+        const announcementPrice = priceAtDate(daily, a.isoDate!);
         const isUp = announcementPrice != null && a.targetPrice > announcementPrice;
 
         pts.push({
           id: `${a.provider}-${a.date}-${a.targetPrice}`,
           x: Number(x),
-          y: Number(y),
+          y: yNum,
           color: isUp ? '#22c55e' : '#ef4444',
           isUp,
           provider: a.provider,
           date: a.date,
-          isoDate,
+          isoDate: a.isoDate!,
           targetPrice: a.targetPrice,
           priceAtAnnouncement: announcementPrice,
           opinion: a.opinion || '',
@@ -431,11 +477,12 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       setAnalystPoints(pts);
     };
 
-    computePoints();
-
+    // 약간 지연 후 첫 계산 (가격 스케일 갱신 대기)
+    const t = setTimeout(computePoints, 50);
     const ts = chartApiRef.current.timeScale();
     ts.subscribeVisibleLogicalRangeChange(computePoints);
     return () => {
+      clearTimeout(t);
       try { ts.unsubscribeVisibleLogicalRangeChange(computePoints); } catch { /* chart removed */ }
     };
   }, [consensus, daily, tf, isUS]);
