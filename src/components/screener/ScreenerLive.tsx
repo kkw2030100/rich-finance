@@ -102,6 +102,8 @@ export function ScreenerLive() {
   const [allScoreData, setAllScoreData] = useState<ScoreItem[]>([]);
   const [breakoutData, setBreakoutData] = useState<BreakoutItem[]>([]);
   const [breakoutMeta, setBreakoutMeta] = useState<{ asOf: string | null; newCount: number; keptCount: number }>({ asOf: null, newCount: 0, keptCount: 0 });
+  const [breakoutType, setBreakoutType] = useState<'confluence' | 'daily' | 'weekly'>('confluence');
+  const [breakoutLoading, setBreakoutLoading] = useState(false);
   const [modeData, setModeData] = useState<Record<string, ScreenerItem[]>>({ total: [], ttm: [], gap: [], composite: [], analyst: [] });
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -133,6 +135,8 @@ export function ScreenerLive() {
     if (t) setTiers(t.split(',').filter(Boolean));
     if (searchParams.get('fav') === '1') setShowFavOnly(true);
     if (searchParams.get('pref') === '1') setExcludePreferred(false);  // pref=1 → 우선주 포함 (default off)
+    const bt = searchParams.get('bt');
+    if (bt === 'daily' || bt === 'weekly') setBreakoutType(bt);
     const q = searchParams.get('q');
     if (q) setSearch(q);
     prevModeRef.current = (m && MODES.find(mm => mm.key === m)) ? m : DEFAULT_MODE;
@@ -146,7 +150,7 @@ export function ScreenerLive() {
       // KR + US 동시 fetch — 전종목 universe
       fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
       fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
-      fetch('/api/breakout?limit=100').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`/api/breakout?limit=100&type=${breakoutType}`).then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
@@ -177,6 +181,7 @@ export function ScreenerLive() {
     if (!arraysEqual(tiers, DEFAULT_TIERS)) params.set('t', tiers.join(','));
     if (showFavOnly) params.set('fav', '1');
     if (excludePreferred !== DEFAULT_EXCLUDE_PREFERRED) params.set('pref', '1');
+    if (breakoutType !== 'confluence') params.set('bt', breakoutType);
     if (search.trim()) params.set('q', search.trim());
 
     const queryString = params.toString();
@@ -188,7 +193,21 @@ export function ScreenerLive() {
       router.replace(url, { scroll: false });
     }
     prevModeRef.current = mode;
-  }, [mode, countries, markets, tiers, showFavOnly, search, hydrated, pathname, router]);
+  }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, breakoutType, search, hydrated, pathname, router]);
+
+  // breakoutType 변경 시 재fetch (마운트 후)
+  useEffect(() => {
+    if (!hydrated) return;
+    setBreakoutLoading(true);
+    fetch(`/api/breakout?limit=100&type=${breakoutType}`)
+      .then(r => r.json())
+      .then(d => {
+        setBreakoutData(d.data || []);
+        setBreakoutMeta({ asOf: d.asOf ?? null, newCount: d.newCount || 0, keptCount: d.keptCount || 0 });
+      })
+      .catch(() => {})
+      .finally(() => setBreakoutLoading(false));
+  }, [breakoutType, hydrated]);
 
   // ---- 외부 클릭으로 dropdown 닫기 ----
   useEffect(() => {
@@ -494,6 +513,27 @@ export function ScreenerLive() {
         </div>
       ) : mode === 'breakout' ? (
         <>
+          {/* Signal Type 토글 */}
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {[
+              { key: 'confluence' as const, label: '🎯 Confluence', desc: '주봉+일봉 동시 신호 (보수적, 승률 97%)' },
+              { key: 'daily' as const, label: '⚡ 일봉', desc: 'MA60 상향 돌파 + 역배열 이력 (조기 진입, 승률 92%)' },
+              { key: 'weekly' as const, label: '🐢 주봉', desc: '베이스 돌파 + 거래량 폭증 (안정적, 승률 93%)' },
+            ].map(t => (
+              <button key={t.key} onClick={() => setBreakoutType(t.key)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                title={t.desc}
+                style={{
+                  background: breakoutType === t.key ? 'rgba(239,68,68,0.15)' : 'var(--bg-card)',
+                  color: breakoutType === t.key ? 'var(--accent-red)' : 'var(--text-secondary)',
+                  border: `1px solid ${breakoutType === t.key ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
+                }}>
+                {t.label}
+              </button>
+            ))}
+            {breakoutLoading && <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} />}
+          </div>
+
           <div className="mb-3 text-xs flex items-center gap-3" style={{ color: 'var(--text-muted)' }}>
             <span style={{ color: current.color }}>{filteredBreakout.length}개</span>
             <span>/ 전체 {breakoutData.length}개</span>

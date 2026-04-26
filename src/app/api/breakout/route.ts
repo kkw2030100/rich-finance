@@ -16,23 +16,25 @@ export async function GET(req: NextRequest) {
     const params = req.nextUrl.searchParams;
     const limit = parseInt(params.get('limit') || '50');
     const newOnly = params.get('new_only') === 'true';
+    const signalType = (params.get('type') || 'confluence').toLowerCase();
+    const validType = ['weekly', 'daily', 'confluence'].includes(signalType) ? signalType : 'confluence';
 
     if (!isLocalDb()) {
-      const result = await supaBreakout({ limit, newOnly });
+      const result = await supaBreakout({ limit, newOnly, signalType: validType });
       return NextResponse.json(result);
     }
 
     const db = getDb();
 
-    // 가장 최근 스캔 날짜
-    const latestRow = db.prepare('SELECT MAX(scan_date) as d FROM stage2_signals').get() as { d: string };
+    // 가장 최근 스캔 날짜 (해당 signal_type 기준)
+    const latestRow = db.prepare('SELECT MAX(scan_date) as d FROM stage2_signals WHERE signal_type = ?').get(validType) as { d: string };
     const latest = latestRow?.d;
     if (!latest) {
-      return NextResponse.json({ data: [], asOf: null });
+      return NextResponse.json({ data: [], asOf: null, signalType: validType });
     }
 
     // 어제 스캔 (있으면)
-    const prevRow = db.prepare('SELECT MAX(scan_date) as d FROM stage2_signals WHERE scan_date < ?').get(latest) as { d: string };
+    const prevRow = db.prepare('SELECT MAX(scan_date) as d FROM stage2_signals WHERE signal_type = ? AND scan_date < ?').get(validType, latest) as { d: string };
     const prev = prevRow?.d;
 
     // 오늘 신호 종목
@@ -41,10 +43,10 @@ export async function GET(req: NextRequest) {
              s.ma60_slope, s.vol_ratio, s.ret_4w, s.confirmed
       FROM stage2_signals s
       JOIN stocks st ON st.code = s.code
-      WHERE s.scan_date = ?
+      WHERE s.scan_date = ? AND s.signal_type = ?
       ORDER BY s.score DESC
       LIMIT ?
-    `).all(latest, limit) as Array<{
+    `).all(latest, validType, limit) as Array<{
       code: string; name: string; market: string;
       score: number; box_pos: number; ma_diff: number;
       ma60_slope: number; vol_ratio: number; ret_4w: number;
@@ -53,15 +55,15 @@ export async function GET(req: NextRequest) {
 
     // 어제 종목 set
     const prevCodes = new Set<string>(
-      prev ? (db.prepare('SELECT code FROM stage2_signals WHERE scan_date = ?').all(prev) as Array<{code: string}>).map(r => r.code) : []
+      prev ? (db.prepare('SELECT code FROM stage2_signals WHERE scan_date = ? AND signal_type = ?').all(prev, validType) as Array<{code: string}>).map(r => r.code) : []
     );
 
     // 첫 발견일 (현재 신호 흐름 기준 — 7일 이내 연속)
     const firstSeenMap = new Map<string, string>();
     for (const r of todayRows) {
       const dates = (db.prepare(`
-        SELECT scan_date FROM stage2_signals WHERE code = ? ORDER BY scan_date DESC
-      `).all(r.code) as Array<{scan_date: string}>).map(x => x.scan_date);
+        SELECT scan_date FROM stage2_signals WHERE code = ? AND signal_type = ? ORDER BY scan_date DESC
+      `).all(r.code, validType) as Array<{scan_date: string}>).map(x => x.scan_date);
 
       let first = dates[0];
       for (let i = 1; i < dates.length; i++) {
@@ -109,6 +111,7 @@ export async function GET(req: NextRequest) {
       prevDate: prev,
       newCount: data.filter(d => d.isNew).length,
       keptCount: data.filter(d => !d.isNew).length,
+      signalType: validType,
     });
   } catch (e) {
     console.error('breakout API error:', e);

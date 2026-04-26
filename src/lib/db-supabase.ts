@@ -358,34 +358,38 @@ export async function supaRiskSignals(market: string) {
 }
 
 // ─── Stage 2 Breakout 신호 ───
-export async function supaBreakout(options: { limit?: number; newOnly?: boolean }) {
+export async function supaBreakout(options: { limit?: number; newOnly?: boolean; signalType?: string }) {
   const limit = options.limit || 50;
+  const signalType = options.signalType || 'confluence';
 
   // 가장 최근 스캔 날짜
   const latestRes = await supabase
     .from('stage2_signals')
     .select('scan_date')
+    .eq('signal_type', signalType)
     .order('scan_date', { ascending: false })
     .limit(1);
   const latest = latestRes.data?.[0]?.scan_date;
   if (!latest) {
-    return { data: [], asOf: null, prevDate: null, newCount: 0, keptCount: 0 };
+    return { data: [], asOf: null, prevDate: null, newCount: 0, keptCount: 0, signalType };
   }
 
-  // 이전 스캔 날짜
+  // 이전 스캔 날짜 (같은 signal_type 기준)
   const prevRes = await supabase
     .from('stage2_signals')
     .select('scan_date')
+    .eq('signal_type', signalType)
     .lt('scan_date', latest)
     .order('scan_date', { ascending: false })
     .limit(1);
   const prev = prevRes.data?.[0]?.scan_date || null;
 
-  // 오늘 신호 종목 (FK 없으므로 별도 stocks 조회)
+  // 오늘 신호 종목 (signal_type 필터 적용)
   const todayRes = await supabase
     .from('stage2_signals')
     .select('ticker, score, box_pos, ma_diff, ma60_slope, vol_ratio, ret_4w, confirmed')
     .eq('scan_date', latest)
+    .eq('signal_type', signalType)
     .order('score', { ascending: false })
     .limit(limit);
 
@@ -414,7 +418,8 @@ export async function supaBreakout(options: { limit?: number; newOnly?: boolean 
     const prevSig = await supabase
       .from('stage2_signals')
       .select('ticker')
-      .eq('scan_date', prev);
+      .eq('scan_date', prev)
+      .eq('signal_type', signalType);
     for (const r of prevSig.data || []) prevCodes.add(r.ticker);
   }
 
@@ -452,6 +457,7 @@ export async function supaBreakout(options: { limit?: number; newOnly?: boolean 
       .from('stage2_signals')
       .select('scan_date')
       .eq('ticker', r.ticker)
+      .eq('signal_type', signalType)
       .order('scan_date', { ascending: false });
     const dates = (histRes.data || []).map(d => d.scan_date);
     let first = dates[0];
@@ -496,5 +502,6 @@ export async function supaBreakout(options: { limit?: number; newOnly?: boolean 
     prevDate: prev,
     newCount: data.filter(d => d.isNew).length,
     keptCount: data.filter(d => !d.isNew).length,
+    signalType,
   };
 }
