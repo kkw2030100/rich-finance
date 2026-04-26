@@ -16,7 +16,6 @@ interface StockTableLiveProps {
   markets?: string[];
   tiers?: string[];
   showFavOnly?: boolean;
-  search?: string;
 }
 
 export function StockTableLive({
@@ -26,7 +25,6 @@ export function StockTableLive({
   markets = [],
   tiers = [],
   showFavOnly = false,
-  search = '',
 }: StockTableLiveProps) {
   const [sortKey, setSortKey] = useState<SortKey>('undervalue');
   const { toggle, isFavorite, favorites } = useFavorites();
@@ -41,13 +39,9 @@ export function StockTableLive({
       if (markets.length > 0 && !markets.includes(market)) return false;
       if (tiers.length > 0 && !tiers.includes(tier)) return false;
       if (showFavOnly && !favorites.includes(s.code)) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        if (!s.code.toLowerCase().includes(q) && !s.name.toLowerCase().includes(q)) return false;
-      }
       return true;
     });
-  }, [data, countries, markets, tiers, showFavOnly, search, favorites]);
+  }, [data, countries, markets, tiers, showFavOnly, favorites]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];

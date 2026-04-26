@@ -110,6 +110,7 @@ export function ScreenerLive() {
   const [showFavOnly, setShowFavOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [searchResults, setSearchResults] = useState<{ code: string; name: string; market: string }[]>([]);
 
   const [hydrated, setHydrated] = useState(false);
   const prevModeRef = useRef<Mode | null>(null);
@@ -206,22 +207,18 @@ export function ScreenerLive() {
     if (markets.length > 0 && !markets.includes(itemMarket)) return false;
     if (tiers.length > 0 && !tiers.includes(itemTier)) return false;
     if (showFavOnly && !favorites.includes(item.code)) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      if (!item.code.toLowerCase().includes(q) && !item.name.toLowerCase().includes(q)) return false;
-    }
     return true;
   }
 
   const filteredBreakout = useMemo(
     () => breakoutData.filter(passes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [breakoutData, countries, markets, tiers, showFavOnly, search, favorites]
+    [breakoutData, countries, markets, tiers, showFavOnly, favorites]
   );
   const filteredData = useMemo(
     () => (modeData[mode] || []).filter(passes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modeData, mode, countries, markets, tiers, showFavOnly, search, favorites]
+    [modeData, mode, countries, markets, tiers, showFavOnly, favorites]
   );
 
   // ---- 모드별 결과 개수 (badge) ----
@@ -237,16 +234,25 @@ export function ScreenerLive() {
     };
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, search, favorites]);
+  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, favorites]);
 
-  // ---- 자동완성 후보 ----
-  const suggestions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return [];
-    return allScoreData
-      .filter(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [allScoreData, search]);
+  // ---- 자동완성 (debounced API call, 필터와 무관) ----
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      fetch(`/api/stocks/search?q=${encodeURIComponent(q)}&limit=10`)
+        .then(r => r.json())
+        .then(d => setSearchResults(d.data || []))
+        .catch(() => setSearchResults([]));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const suggestions = searchResults;
 
   const onSearchEnter = () => {
     if (suggestions.length === 0) return;
@@ -329,9 +335,6 @@ export function ScreenerLive() {
                     <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{s.code} · {s.market.toUpperCase()}</span>
                   </div>
-                  <span className="text-[10px] ml-2 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                    {(s.price ?? 0).toLocaleString()}
-                  </span>
                 </Link>
               ))}
               <div className="px-3 py-1.5 text-[10px]" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
@@ -448,7 +451,6 @@ export function ScreenerLive() {
           markets={markets}
           tiers={tiers}
           showFavOnly={showFavOnly}
-          search={search}
         />
       ) : !dataLoaded ? (
         <div className="flex items-center justify-center py-16">
