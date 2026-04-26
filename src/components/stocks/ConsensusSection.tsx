@@ -182,11 +182,8 @@ export function ConsensusSection({ code }: { code: string }) {
         </div>
       )}
 
-      {/* 목표가 차트 오버레이 */}
-      <TargetPriceChart code={code} analysts={data.analysts} targetPriceWeighted={data.targetPriceWeighted} currentPrice={data.currentPrice} />
-
       <div className="text-[10px] mt-3 text-center" style={{ color: 'var(--text-muted)' }}>
-        증권사 의견은 참고 자료이며 투자 판단의 책임은 본인에게 있습니다
+        증권사 의견은 참고 자료 · 목표가는 위 캔들 차트에 표시됩니다 · 투자 판단의 책임은 본인에게 있습니다
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  createChart, CandlestickSeries, HistogramSeries, LineSeries,
-  type IChartApi, type ISeriesApi, type Time, type UTCTimestamp,
+  createChart, CandlestickSeries, HistogramSeries, LineSeries, LineStyle,
+  type IChartApi, type ISeriesApi, type IPriceLine, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 
 interface PriceRow {
@@ -84,6 +84,18 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   const [tf, setTf] = useState<Timeframe>('D');
   const [daily, setDaily] = useState<PriceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [consensus, setConsensus] = useState<{
+    targetPriceWeighted: number | null;
+    upside: number | null;
+    rating: number | null;
+    analystCount: number;
+    consensusEps: number | null;
+    consensusPer: number | null;
+    currentPrice: number | null;
+    analysts?: Array<{ provider: string; targetPrice: number; weight: number; date: string }>;
+  } | null>(null);
+  const targetLineRef = useRef<IPriceLine | null>(null);
+  const analystLinesRef = useRef<IPriceLine[]>([]);
 
   // Fetch 600일 일봉
   useEffect(() => {
@@ -91,12 +103,20 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
     fetch(`/api/stocks/${code}/prices?days=600`)
       .then(r => r.json())
       .then((rows: PriceRow[]) => {
-        // [최신, ...] → [오래된, ..., 최신]
         const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
         setDaily(sorted);
       })
       .finally(() => setLoading(false));
   }, [code]);
+
+  // 컨센서스 (목표가) — 한국 종목만
+  useEffect(() => {
+    if (isUS) return;
+    fetch(`/api/stocks/${code}/consensus`)
+      .then(r => r.json())
+      .then(setConsensus)
+      .catch(() => {});
+  }, [code, isUS]);
 
   // 차트 초기화
   useEffect(() => {
@@ -208,8 +228,90 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
     });
   }, [daily, tf]);
 
+  // 컨센서스 목표가 라인 (가중평균 + 개별 애널리스트)
+  useEffect(() => {
+    if (!candleRef.current || !consensus) return;
+
+    // 기존 라인 제거
+    if (targetLineRef.current) {
+      candleRef.current.removePriceLine(targetLineRef.current);
+      targetLineRef.current = null;
+    }
+    analystLinesRef.current.forEach(l => candleRef.current?.removePriceLine(l));
+    analystLinesRef.current = [];
+
+    // 가중평균 목표가 (굵은 점선, 라벨)
+    if (consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0) {
+      const upsideStr = consensus.upside != null
+        ? ` ${consensus.upside >= 0 ? '+' : ''}${consensus.upside.toFixed(0)}%`
+        : '';
+      targetLineRef.current = candleRef.current.createPriceLine({
+        price: consensus.targetPriceWeighted,
+        color: '#22c55e',
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `목표${upsideStr}`,
+      });
+    }
+
+    // 개별 애널리스트 목표가 (얇은 점선, weight 1만 표시 = 최근 1개월)
+    if (consensus.analysts && consensus.analysts.length > 0) {
+      const recent = consensus.analysts.filter(a => a.weight === 1).slice(0, 8);
+      for (const a of recent) {
+        if (!a.targetPrice || a.targetPrice <= 0) continue;
+        const above = consensus.currentPrice != null && a.targetPrice >= consensus.currentPrice;
+        const line = candleRef.current.createPriceLine({
+          price: a.targetPrice,
+          color: above ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: false,
+          title: a.provider.slice(0, 4),
+        });
+        analystLinesRef.current.push(line);
+      }
+    }
+  }, [consensus, daily]);
+
   return (
     <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      {/* 컨센서스 요약 (한국 종목, 데이터 있을 때만) */}
+      {!isUS && consensus && consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-4 text-[11px]">
+            <div>
+              <span style={{ color: 'var(--text-muted)' }}>목표가 </span>
+              <span className="font-bold" style={{ color: 'var(--accent-green)' }}>{consensus.targetPriceWeighted.toLocaleString()}원</span>
+              {consensus.upside != null && (
+                <span className="ml-1" style={{ color: consensus.upside >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                  ({consensus.upside >= 0 ? '+' : ''}{consensus.upside.toFixed(0)}%)
+                </span>
+              )}
+            </div>
+            {consensus.rating != null && consensus.rating > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>★ </span>
+                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{consensus.rating.toFixed(1)}</span>
+                <span style={{ color: 'var(--text-muted)' }}> ({consensus.analystCount}개)</span>
+              </div>
+            )}
+            {consensus.consensusEps != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>EPS </span>
+                <span style={{ color: 'var(--text-primary)' }}>{consensus.consensusEps.toLocaleString()}원</span>
+              </div>
+            )}
+            {consensus.consensusPer != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>PER </span>
+                <span style={{ color: 'var(--text-primary)' }}>{consensus.consensusPer.toFixed(1)}배</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 헤더 — 일/주/월 토글 + MA 범례 */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-3 text-[11px]">
