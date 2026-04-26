@@ -52,6 +52,16 @@ function priceAtDate(daily: PriceRow[], targetDate: string): number | null {
   return result;
 }
 
+// 애널리스트 발표일을 현재 timeframe(D/W/M)의 봉 날짜로 매핑
+// bars는 오름차순. isoDate <= bar.date인 첫 봉 찾음 (해당 봉이 isoDate를 포함)
+function mapAnalystDateToBar(bars: PriceRow[], isoDate: string): string | null {
+  for (const b of bars) {
+    if (b.date >= isoDate) return b.date;
+  }
+  // 모든 봉이 isoDate보다 이전이면 가장 마지막 봉
+  return bars.length > 0 ? bars[bars.length - 1].date : null;
+}
+
 function aggregateBars(daily: PriceRow[], tf: Timeframe): PriceRow[] {
   if (tf === 'D') return daily;
   const groups = new Map<string, PriceRow[]>();
@@ -432,27 +442,40 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       return;
     }
 
-    // 1) 가격 스케일 확장용 invisible series — 모든 목표가 포함
-    const validAnalysts = consensus.analysts
-      .map(a => ({ ...a, isoDate: parseAnalystDate(a.date) }))
-      .filter(a => a.isoDate && a.targetPrice && a.targetPrice > 0);
+    // 1) 현재 timeframe의 봉 데이터 (애널리스트 → 봉 매핑용)
+    const bars = aggregateBars(daily, tf);
+    if (bars.length === 0) {
+      setAnalystPoints([]);
+      targetRangeSeriesRef.current?.setData([]);
+      return;
+    }
 
-    if (targetRangeSeriesRef.current && validAnalysts.length > 0) {
-      // 같은 시간 중복 제거 + 정렬 (lightweight-charts 요구)
+    // 2) 애널리스트 → 봉 시간 매핑
+    const validAnalysts = consensus.analysts
+      .map(a => {
+        const isoDate = parseAnalystDate(a.date);
+        if (!isoDate || !a.targetPrice || a.targetPrice <= 0) return null;
+        const barDate = mapAnalystDateToBar(bars, isoDate);
+        if (!barDate) return null;
+        return { ...a, isoDate, barDate };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    // 3) 가격 스케일 확장용 invisible series — 봉 시간 기준
+    if (targetRangeSeriesRef.current) {
+      // 같은 봉에 여러 애널리스트가 매핑되면 max 사용
       const dataMap = new Map<number, number>();
       for (const a of validAnalysts) {
-        const t = dateToTime(a.isoDate!);
-        // 같은 시간 = 더 큰 값 우선 (안전망)
+        const t = dateToTime(a.barDate);
         const existing = dataMap.get(t);
         if (!existing || a.targetPrice > existing) dataMap.set(t, a.targetPrice);
       }
-      // 또한 2 가지 가격 (min, max)을 첫/마지막 시간에 추가 → 가격 범위 강제 확장
-      const minTarget = Math.min(...validAnalysts.map(a => a.targetPrice));
-      const maxTarget = Math.max(...validAnalysts.map(a => a.targetPrice));
-      const sortedDaily = [...daily].sort((a, b) => a.date.localeCompare(b.date));
-      if (sortedDaily.length >= 2) {
-        const firstT = dateToTime(sortedDaily[0].date);
-        const lastT = dateToTime(sortedDaily[sortedDaily.length - 1].date);
+      // min/max 가격을 첫/마지막 봉에 추가 → 가격 범위 강제 확장
+      if (validAnalysts.length > 0) {
+        const minTarget = Math.min(...validAnalysts.map(a => a.targetPrice));
+        const maxTarget = Math.max(...validAnalysts.map(a => a.targetPrice));
+        const firstT = dateToTime(bars[0].date);
+        const lastT = dateToTime(bars[bars.length - 1].date);
         if (!dataMap.has(firstT)) dataMap.set(firstT, minTarget);
         if (!dataMap.has(lastT)) dataMap.set(lastT, maxTarget);
       }
@@ -462,7 +485,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       targetRangeSeriesRef.current.setData(seriesData);
     }
 
-    // 2) 점 좌표 계산 (가격 스케일 확장 후)
+    // 4) 점 좌표 계산
     const computePoints = () => {
       const ts = chartApiRef.current?.timeScale();
       const series = candleRef.current;
@@ -470,15 +493,14 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
 
       const pts: AnalystPoint[] = [];
       for (const a of validAnalysts) {
-        const time = dateToTime(a.isoDate!);
+        const time = dateToTime(a.barDate);
         const x = ts.timeToCoordinate(time);
         const y = series.priceToCoordinate(a.targetPrice);
         if (x === null || y === null) continue;
-        // 차트 외부는 skip (안전망)
         const yNum = Number(y);
         if (yNum < 0 || yNum > 480) continue;
 
-        const announcementPrice = priceAtDate(daily, a.isoDate!);
+        const announcementPrice = priceAtDate(daily, a.isoDate);
         const isUp = announcementPrice != null && a.targetPrice > announcementPrice;
 
         pts.push({
@@ -489,7 +511,7 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
           isUp,
           provider: a.provider,
           date: a.date,
-          isoDate: a.isoDate!,
+          isoDate: a.isoDate,
           targetPrice: a.targetPrice,
           priceAtAnnouncement: announcementPrice,
           opinion: a.opinion || '',
