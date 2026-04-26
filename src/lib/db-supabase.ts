@@ -389,18 +389,29 @@ export async function supaBreakout(options: { limit?: number; newOnly?: boolean 
     for (const r of prevSig.data || []) prevCodes.add(r.ticker);
   }
 
-  // 가장 최근 시세
+  // 가장 최근 시세 + stock_scores 시총 폴백
   const tickers = todayRows.map(r => r.ticker);
   const priceMap = new Map<string, { close: number; change_pct: number; market_cap: number | null }>();
+  const scoreMcapMap = new Map<string, number>();
   if (tickers.length > 0) {
-    const priceRes = await supabase
-      .from('daily_prices')
-      .select('ticker, close, market_cap, trade_date')
-      .in('ticker', tickers)
-      .order('trade_date', { ascending: false });
+    const [priceRes, scoreRes] = await Promise.all([
+      supabase.from('daily_prices')
+        .select('ticker, close, market_cap, trade_date')
+        .in('ticker', tickers)
+        .order('trade_date', { ascending: false }),
+      supabase.from('stock_scores')
+        .select('ticker, market_cap, score_date')
+        .in('ticker', tickers)
+        .order('score_date', { ascending: false }),
+    ]);
     for (const p of priceRes.data || []) {
       if (!priceMap.has(p.ticker)) {
         priceMap.set(p.ticker, { close: p.close, change_pct: 0, market_cap: p.market_cap });
+      }
+    }
+    for (const s of scoreRes.data || []) {
+      if (!scoreMcapMap.has(s.ticker) && s.market_cap) {
+        scoreMcapMap.set(s.ticker, s.market_cap);
       }
     }
   }
@@ -446,7 +457,7 @@ export async function supaBreakout(options: { limit?: number; newOnly?: boolean 
         return r.stocks.market === 'US' ? p / 100 : p;
       })(),
       changePct: priceMap.get(r.ticker)?.change_pct ?? null,
-      marketCap: priceMap.get(r.ticker)?.market_cap ?? null,
+      marketCap: priceMap.get(r.ticker)?.market_cap ?? scoreMcapMap.get(r.ticker) ?? null,
     }))
     .filter(d => !options.newOnly || d.isNew);
 

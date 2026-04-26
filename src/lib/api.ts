@@ -122,10 +122,10 @@ export function formatPct(n: number | null | undefined): string {
   return sign + n.toFixed(1) + '%';
 }
 
-export function deriveTier(marketCap: number | null | undefined, market: string): string {
+export function deriveTier(marketCap: number | null | undefined, market: string): string | null {
   const m = (market || '').toLowerCase();
   if (m === 'us') return '미국주식';
-  if (!marketCap) return '소형주';
+  if (!marketCap || marketCap <= 0) return null;  // 시총 데이터 결측 — 폴백하지 않음
   if (marketCap >= 50000) return '초대형주';
   if (marketCap >= 10000) return '대형주';
   if (marketCap >= 3000) return '중형주';

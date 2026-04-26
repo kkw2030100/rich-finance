@@ -37,7 +37,10 @@ export function StockTableLive({
 
       if (countries.length > 0 && !countries.includes(country)) return false;
       if (markets.length > 0 && !markets.includes(market)) return false;
-      if (tiers.length > 0 && !tiers.includes(tier)) return false;
+      if (tiers.length > 0) {
+        if (!tier) return false;
+        if (!tiers.includes(tier)) return false;
+      }
       if (showFavOnly && !favorites.includes(s.code)) return false;
       return true;
     });

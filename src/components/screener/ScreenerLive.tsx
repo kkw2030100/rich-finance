@@ -205,7 +205,10 @@ export function ScreenerLive() {
 
     if (countries.length > 0 && !countries.includes(itemCountry)) return false;
     if (markets.length > 0 && !markets.includes(itemMarket)) return false;
-    if (tiers.length > 0 && !tiers.includes(itemTier)) return false;
+    if (tiers.length > 0) {
+      if (!itemTier) return false;  // 시총 결측 종목은 tier 필터 통과 못함
+      if (!tiers.includes(itemTier)) return false;
+    }
     if (showFavOnly && !favorites.includes(item.code)) return false;
     return true;
   }
