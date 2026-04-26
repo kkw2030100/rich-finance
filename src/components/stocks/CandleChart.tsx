@@ -138,6 +138,14 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   const [selectedPoint, setSelectedPoint] = useState<AnalystPoint | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // hover 시 표시할 OHLC + MA. null이면 마지막 봉으로 폴백
+  const [hoverInfo, setHoverInfo] = useState<{
+    date: string;
+    open: number; high: number; low: number; close: number; volume: number;
+    ma: (number | null)[];
+  } | null>(null);
+  const [lastBar, setLastBar] = useState<typeof hoverInfo>(null);
+
   // Fetch 600일 일봉
   useEffect(() => {
     setLoading(true);
@@ -266,6 +274,64 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       from: bars.length - visible,
       to: bars.length,
     });
+
+    // 마지막 봉 정보 (default 표시용)
+    const lastIdx = bars.length - 1;
+    const last = bars[lastIdx];
+    if (last) {
+      const maVals = MA_CONFIGS.map(cfg => {
+        if (lastIdx + 1 < cfg.period) return null;
+        let s = 0;
+        for (let j = lastIdx + 1 - cfg.period; j <= lastIdx; j++) s += closes[j];
+        return s / cfg.period;
+      });
+      setLastBar({
+        date: last.date,
+        open: last.open, high: last.high, low: last.low, close: last.close,
+        volume: last.volume || 0,
+        ma: maVals,
+      });
+    }
+  }, [daily, tf]);
+
+  // crosshair hover — OHLC + MA 값 추적
+  useEffect(() => {
+    if (!chartApiRef.current || !candleRef.current) return;
+    const chart = chartApiRef.current;
+    const candle = candleRef.current;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onMove = (param: any) => {
+      if (!param?.time || !param?.seriesData) {
+        setHoverInfo(null);
+        return;
+      }
+      const c = param.seriesData.get(candle);
+      if (!c) {
+        setHoverInfo(null);
+        return;
+      }
+      const v = volumeRef.current ? param.seriesData.get(volumeRef.current) : null;
+      const maVals = MA_CONFIGS.map((_, i) => {
+        const m = maRefs.current[i] ? param.seriesData.get(maRefs.current[i]) : null;
+        return m?.value ?? null;
+      });
+      // time → date 변환
+      const ts = typeof param.time === 'number' ? param.time : 0;
+      const d = new Date(ts * 1000);
+      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      setHoverInfo({
+        date: dateStr,
+        open: c.open, high: c.high, low: c.low, close: c.close,
+        volume: v?.value ?? 0,
+        ma: maVals,
+      });
+    };
+
+    chart.subscribeCrosshairMove(onMove);
+    return () => {
+      try { chart.unsubscribeCrosshairMove(onMove); } catch { /* removed */ }
+    };
   }, [daily, tf]);
 
   // 컨센서스 목표가 라인 (가중평균 + 개별 애널리스트)
@@ -424,30 +490,64 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         </div>
       )}
 
-      {/* 헤더 — 일/주/월 토글 + MA 범례 */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-3 text-[11px]">
-          {MA_CONFIGS.map(cfg => (
-            <div key={cfg.label} className="flex items-center gap-1">
-              <div className="w-3 h-0.5" style={{ background: cfg.color }} />
-              <span style={{ color: 'var(--text-muted)' }}>{cfg.label}</span>
+      {/* OHLC + MA 정보 행 (hover 우선, 없으면 마지막 봉) */}
+      {(() => {
+        const info = hoverInfo || lastBar;
+        if (!info) return null;
+        const fmtPrice = (v: number | null | undefined) =>
+          v == null ? '-' : isUS ? '$' + v.toFixed(2) : v.toLocaleString();
+        const fmtVol = (v: number) =>
+          v >= 1_000_000 ? (v / 1_000_000).toFixed(2) + 'M' : v >= 1_000 ? (v / 1_000).toFixed(0) + 'K' : v.toString();
+        const isUp = info.close >= info.open;
+        const closeColor = isUp ? 'var(--accent-red)' : 'var(--accent-blue)';
+        const change = info.open > 0 ? ((info.close - info.open) / info.open * 100) : 0;
+        return (
+          <div className="flex items-center justify-between flex-wrap gap-x-3 gap-y-1 mb-2 text-[11px]">
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+              <span style={{ color: 'var(--text-muted)' }}>{info.date}</span>
+              <span><span style={{ color: 'var(--text-muted)' }}>시 </span><span style={{ color: 'var(--text-primary)' }}>{fmtPrice(info.open)}</span></span>
+              <span><span style={{ color: 'var(--text-muted)' }}>고 </span><span style={{ color: 'var(--accent-red)' }}>{fmtPrice(info.high)}</span></span>
+              <span><span style={{ color: 'var(--text-muted)' }}>저 </span><span style={{ color: 'var(--accent-blue)' }}>{fmtPrice(info.low)}</span></span>
+              <span><span style={{ color: 'var(--text-muted)' }}>종 </span><span className="font-bold" style={{ color: closeColor }}>{fmtPrice(info.close)}</span>
+                <span className="ml-1" style={{ color: closeColor }}>({change >= 0 ? '+' : ''}{change.toFixed(2)}%)</span>
+              </span>
+              <span><span style={{ color: 'var(--text-muted)' }}>거래량 </span><span style={{ color: 'var(--text-secondary)' }}>{fmtVol(info.volume)}</span></span>
             </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          {(['D', 'W', 'M'] as Timeframe[]).map(t => (
-            <button key={t} onClick={() => setTf(t)}
-              className="px-3 py-1 rounded text-xs font-semibold cursor-pointer transition-colors"
-              style={{
-                background: tf === t ? 'rgba(59,130,246,0.18)' : 'transparent',
-                color: tf === t ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                border: '1px solid var(--border)',
-              }}>
-              {t === 'D' ? '일봉' : t === 'W' ? '주봉' : '월봉'}
-            </button>
-          ))}
-        </div>
-      </div>
+            <div className="flex items-center gap-2">
+              {(['D', 'W', 'M'] as Timeframe[]).map(t => (
+                <button key={t} onClick={() => setTf(t)}
+                  className="px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer transition-colors"
+                  style={{
+                    background: tf === t ? 'rgba(59,130,246,0.18)' : 'transparent',
+                    color: tf === t ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                    border: '1px solid var(--border)',
+                  }}>
+                  {t === 'D' ? '일봉' : t === 'W' ? '주봉' : '월봉'}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MA 값 행 */}
+      {(() => {
+        const info = hoverInfo || lastBar;
+        if (!info) return null;
+        const fmtPrice = (v: number | null | undefined) =>
+          v == null ? '-' : isUS ? '$' + v.toFixed(2) : Math.round(v).toLocaleString();
+        return (
+          <div className="flex items-center gap-x-3 gap-y-1 mb-3 text-[11px] flex-wrap">
+            {MA_CONFIGS.map((cfg, i) => (
+              <span key={cfg.label} className="flex items-center gap-1">
+                <span className="w-3 h-0.5 inline-block" style={{ background: cfg.color }} />
+                <span style={{ color: 'var(--text-muted)' }}>{cfg.label}</span>
+                <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtPrice(info.ma[i])}</span>
+              </span>
+            ))}
+          </div>
+        );
+      })()}
 
       {loading && <div className="h-[480px] flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>차트 로딩 중...</div>}
 
