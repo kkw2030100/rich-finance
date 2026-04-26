@@ -169,6 +169,18 @@ export function getCountry(market: string): string {
   return (market || '').toLowerCase() === 'us' ? 'us' : 'kr';
 }
 
+/**
+ * 한국 우선주 식별: 6자리 코드의 마지막 자리가 '0'이 아니면 우선주.
+ * - 005380 (현대차, 보통주) → false
+ * - 005385 (현대차우), 005387 (현대차2우B), 00088K (한화3우B) → true
+ * - 미국 종목은 항상 false (적용 안 함)
+ */
+export function isPreferredStock(code: string, market: string): boolean {
+  if ((market || '').toLowerCase() === 'us') return false;
+  if (!code || code.length !== 6) return false;
+  return code[5] !== '0';
+}
+
 export function getVerdictInfo(verdict: string) {
   switch (verdict) {
     case 'strong_buy': return { label: 'Strong Buy', color: '#00C853' };

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowUpDown, Loader2 } from 'lucide-react';
-import { ScoreItem, formatMoney, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
+import { ScoreItem, formatMoney, formatPct, getVerdictInfo, deriveTier, getCountry, isPreferredStock } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
@@ -16,6 +16,7 @@ interface StockTableLiveProps {
   markets?: string[];
   tiers?: string[];
   showFavOnly?: boolean;
+  excludePreferred?: boolean;
 }
 
 export function StockTableLive({
@@ -25,6 +26,7 @@ export function StockTableLive({
   markets = [],
   tiers = [],
   showFavOnly = false,
+  excludePreferred = false,
 }: StockTableLiveProps) {
   const [sortKey, setSortKey] = useState<SortKey>('undervalue');
   const { toggle, isFavorite, favorites } = useFavorites();
@@ -42,9 +44,10 @@ export function StockTableLive({
         if (!tiers.includes(tier)) return false;
       }
       if (showFavOnly && !favorites.includes(s.code)) return false;
+      if (excludePreferred && isPreferredStock(s.code, s.market)) return false;
       return true;
     });
-  }, [data, countries, markets, tiers, showFavOnly, favorites]);
+  }, [data, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];

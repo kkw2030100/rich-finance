@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Loader2, ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search, X } from 'lucide-react';
-import { fetchScores, ScoreItem, formatMoney, formatPrice, formatPct, deriveTier, getCountry } from '@/lib/api';
+import { fetchScores, ScoreItem, formatMoney, formatPrice, formatPct, deriveTier, getCountry, isPreferredStock } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
@@ -46,6 +46,7 @@ const DEFAULT_COUNTRIES = ['kr'];
 const DEFAULT_MARKETS = ['kospi'];
 const DEFAULT_TIERS = ['초대형주'];
 const DEFAULT_MODE: Mode = 'total';
+const DEFAULT_EXCLUDE_PREFERRED = true;
 
 interface BreakoutItem {
   code: string; name: string; market: string;
@@ -108,6 +109,7 @@ export function ScreenerLive() {
   const [markets, setMarkets] = useState<string[]>(DEFAULT_MARKETS);
   const [tiers, setTiers] = useState<string[]>(DEFAULT_TIERS);
   const [showFavOnly, setShowFavOnly] = useState(false);
+  const [excludePreferred, setExcludePreferred] = useState(DEFAULT_EXCLUDE_PREFERRED);
   const [search, setSearch] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchResults, setSearchResults] = useState<{ code: string; name: string; market: string }[]>([]);
@@ -130,6 +132,7 @@ export function ScreenerLive() {
     const t = searchParams.get('t');
     if (t) setTiers(t.split(',').filter(Boolean));
     if (searchParams.get('fav') === '1') setShowFavOnly(true);
+    if (searchParams.get('pref') === '1') setExcludePreferred(false);  // pref=1 → 우선주 포함 (default off)
     const q = searchParams.get('q');
     if (q) setSearch(q);
     prevModeRef.current = (m && MODES.find(mm => mm.key === m)) ? m : DEFAULT_MODE;
@@ -171,6 +174,7 @@ export function ScreenerLive() {
     if (!arraysEqual(markets, DEFAULT_MARKETS)) params.set('m', markets.join(','));
     if (!arraysEqual(tiers, DEFAULT_TIERS)) params.set('t', tiers.join(','));
     if (showFavOnly) params.set('fav', '1');
+    if (excludePreferred !== DEFAULT_EXCLUDE_PREFERRED) params.set('pref', '1');
     if (search.trim()) params.set('q', search.trim());
 
     const queryString = params.toString();
@@ -210,18 +214,19 @@ export function ScreenerLive() {
       if (!tiers.includes(itemTier)) return false;
     }
     if (showFavOnly && !favorites.includes(item.code)) return false;
+    if (excludePreferred && isPreferredStock(item.code, item.market)) return false;
     return true;
   }
 
   const filteredBreakout = useMemo(
     () => breakoutData.filter(passes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [breakoutData, countries, markets, tiers, showFavOnly, favorites]
+    [breakoutData, countries, markets, tiers, showFavOnly, excludePreferred, favorites]
   );
   const filteredData = useMemo(
     () => (modeData[mode] || []).filter(passes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modeData, mode, countries, markets, tiers, showFavOnly, favorites]
+    [modeData, mode, countries, markets, tiers, showFavOnly, excludePreferred, favorites]
   );
 
   // ---- 모드별 결과 개수 (badge) ----
@@ -237,7 +242,7 @@ export function ScreenerLive() {
     };
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, favorites]);
+  }, [allScoreData, breakoutData, modeData, countries, markets, tiers, showFavOnly, excludePreferred, favorites]);
 
   // ---- 자동완성 (debounced API call, 필터와 무관) ----
   useEffect(() => {
@@ -268,7 +273,7 @@ export function ScreenerLive() {
     !arraysEqual(countries, DEFAULT_COUNTRIES) ||
     !arraysEqual(markets, DEFAULT_MARKETS) ||
     !arraysEqual(tiers, DEFAULT_TIERS) ||
-    showFavOnly || search.trim() !== '';
+    showFavOnly || excludePreferred !== DEFAULT_EXCLUDE_PREFERRED || search.trim() !== '';
 
   const enabledCountries = COUNTRIES.filter(c => !c.disabled).map(c => c.key);
   const allCountriesSelected = enabledCountries.length > 0 && enabledCountries.every(k => countries.includes(k));
@@ -409,12 +414,19 @@ export function ScreenerLive() {
             onClick={() => setShowFavOnly(!showFavOnly)}>
             ⭐ 관심종목{favorites.length > 0 && ` (${favorites.length})`}
           </Chip>
+          <Chip
+            active={excludePreferred}
+            color="#ef4444"
+            onClick={() => setExcludePreferred(!excludePreferred)}>
+            우선주 제외
+          </Chip>
           {isDirty && (
             <button onClick={() => {
               setCountries(DEFAULT_COUNTRIES);
               setMarkets(DEFAULT_MARKETS);
               setTiers(DEFAULT_TIERS);
               setShowFavOnly(false);
+              setExcludePreferred(DEFAULT_EXCLUDE_PREFERRED);
               setSearch('');
             }}
               className="ml-auto px-2.5 py-1.5 rounded-lg text-[11px] cursor-pointer"
@@ -471,6 +483,7 @@ export function ScreenerLive() {
           markets={markets}
           tiers={tiers}
           showFavOnly={showFavOnly}
+          excludePreferred={excludePreferred}
         />
       ) : !dataLoaded ? (
         <div className="flex items-center justify-center py-16">
