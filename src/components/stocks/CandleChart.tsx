@@ -187,19 +187,31 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       .catch(() => setScoreHistory([]));
   }, [code]);
 
-  // 점수 시리즈에 데이터 set
+  // 점수 시리즈에 데이터 set — 봉 시간에 매핑 (주봉/월봉 호환)
   useEffect(() => {
     if (!scoreSeriesRef.current) return;
-    if (scoreHistory.length === 0) {
+    if (scoreHistory.length === 0 || daily.length === 0) {
       scoreSeriesRef.current.setData([]);
       return;
     }
-    const seriesData = scoreHistory.map(s => ({
-      time: dateToTime(s.date),
-      value: s.total,
-    }));
+    const bars = aggregateBars(daily, tf);
+    if (bars.length === 0) {
+      scoreSeriesRef.current.setData([]);
+      return;
+    }
+    // 같은 봉에 여러 score 매핑 시 마지막 값 유지
+    const dataMap = new Map<number, number>();
+    for (const s of scoreHistory) {
+      const barDate = mapAnalystDateToBar(bars, s.date);
+      if (!barDate) continue;
+      const t = dateToTime(barDate);
+      dataMap.set(t, s.total);
+    }
+    const seriesData = [...dataMap.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([t, v]) => ({ time: t as UTCTimestamp, value: v }));
     scoreSeriesRef.current.setData(seriesData);
-  }, [scoreHistory]);
+  }, [scoreHistory, daily, tf]);
 
   // 차트 초기화
   useEffect(() => {
@@ -215,6 +227,11 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       grid: {
         vertLines: { color: 'rgba(75, 85, 99, 0.15)' },
         horzLines: { color: 'rgba(75, 85, 99, 0.15)' },
+      },
+      leftPriceScale: {
+        visible: true,
+        borderColor: 'rgba(75, 85, 99, 0.3)',
+        scaleMargins: { top: 0.1, bottom: 0.3 },
       },
       rightPriceScale: { borderColor: 'rgba(75, 85, 99, 0.3)', scaleMargins: { top: 0.05, bottom: 0.25 } },
       timeScale: { borderColor: 'rgba(75, 85, 99, 0.3)', timeVisible: false, secondsVisible: false },
@@ -290,13 +307,8 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: true,
-      priceScaleId: 'score',
+      priceScaleId: 'left',
       priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
-    });
-    chart.priceScale('score').applyOptions({
-      scaleMargins: { top: 0.1, bottom: 0.3 },
-      borderColor: 'rgba(75, 85, 99, 0.3)',
-      autoScale: false,
     });
     // 0~100 범위 강제
     scoreSeriesRef.current.applyOptions({
