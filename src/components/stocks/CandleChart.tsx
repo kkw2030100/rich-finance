@@ -86,12 +86,16 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   const [loading, setLoading] = useState(true);
   const [consensus, setConsensus] = useState<{
     targetPriceWeighted: number | null;
+    targetPriceHigh?: number | null;
+    targetPriceLow?: number | null;
     upside: number | null;
     rating: number | null;
     analystCount: number;
     consensusEps: number | null;
     consensusPer: number | null;
     currentPrice: number | null;
+    opinionText?: string;
+    currency?: string;
     analysts?: Array<{ provider: string; targetPrice: number; weight: number; date: string }>;
   } | null>(null);
   const targetLineRef = useRef<IPriceLine | null>(null);
@@ -109,14 +113,13 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       .finally(() => setLoading(false));
   }, [code]);
 
-  // 컨센서스 (목표가) — 한국 종목만
+  // 컨센서스 (목표가) — 한국 + 미국 모두
   useEffect(() => {
-    if (isUS) return;
     fetch(`/api/stocks/${code}/consensus`)
-      .then(r => r.json())
-      .then(setConsensus)
-      .catch(() => {});
-  }, [code, isUS]);
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && !d.error ? setConsensus(d) : setConsensus(null))
+      .catch(() => setConsensus(null));
+  }, [code]);
 
   // 차트 초기화
   useEffect(() => {
@@ -255,8 +258,8 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       });
     }
 
-    // 개별 애널리스트 목표가 (얇은 점선, weight 1만 표시 = 최근 1개월)
-    if (consensus.analysts && consensus.analysts.length > 0) {
+    // 개별 애널리스트 목표가 (한국 종목만, weight 1 = 최근 1개월)
+    if (!isUS && consensus.analysts && consensus.analysts.length > 0) {
       const recent = consensus.analysts.filter(a => a.weight === 1).slice(0, 8);
       for (const a of recent) {
         if (!a.targetPrice || a.targetPrice <= 0) continue;
@@ -272,28 +275,64 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         analystLinesRef.current.push(line);
       }
     }
-  }, [consensus, daily]);
+
+    // 미국 종목: 목표가 High/Low 범위 라인
+    if (isUS && consensus.targetPriceHigh && consensus.targetPriceHigh > 0) {
+      const high = candleRef.current.createPriceLine({
+        price: consensus.targetPriceHigh,
+        color: 'rgba(34, 197, 94, 0.5)',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: '최고',
+      });
+      analystLinesRef.current.push(high);
+    }
+    if (isUS && consensus.targetPriceLow && consensus.targetPriceLow > 0) {
+      const low = candleRef.current.createPriceLine({
+        price: consensus.targetPriceLow,
+        color: 'rgba(239, 68, 68, 0.5)',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: '최저',
+      });
+      analystLinesRef.current.push(low);
+    }
+  }, [consensus, daily, isUS]);
 
   return (
     <div className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      {/* 컨센서스 요약 (한국 종목, 데이터 있을 때만) */}
-      {!isUS && consensus && consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0 && (
+      {/* 컨센서스 요약 — 한국 + 미국 */}
+      {consensus && consensus.targetPriceWeighted && consensus.targetPriceWeighted > 0 && (
         <div className="flex items-center justify-between flex-wrap gap-3 mb-3 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex items-center gap-4 text-[11px] flex-wrap">
             <div>
               <span style={{ color: 'var(--text-muted)' }}>목표가 </span>
-              <span className="font-bold" style={{ color: 'var(--accent-green)' }}>{consensus.targetPriceWeighted.toLocaleString()}원</span>
+              <span className="font-bold" style={{ color: 'var(--accent-green)' }}>
+                {isUS ? '$' + consensus.targetPriceWeighted.toFixed(2) : consensus.targetPriceWeighted.toLocaleString() + '원'}
+              </span>
               {consensus.upside != null && (
                 <span className="ml-1" style={{ color: consensus.upside >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                   ({consensus.upside >= 0 ? '+' : ''}{consensus.upside.toFixed(0)}%)
                 </span>
               )}
             </div>
+            {/* 미국: 목표가 범위 (Low ~ High) */}
+            {isUS && consensus.targetPriceLow && consensus.targetPriceHigh && (
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>범위 </span>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  ${consensus.targetPriceLow.toFixed(2)} ~ ${consensus.targetPriceHigh.toFixed(2)}
+                </span>
+              </div>
+            )}
             {consensus.rating != null && consensus.rating > 0 && (
               <div>
-                <span style={{ color: 'var(--text-muted)' }}>★ </span>
-                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{consensus.rating.toFixed(1)}</span>
-                <span style={{ color: 'var(--text-muted)' }}> ({consensus.analystCount}개)</span>
+                <span style={{ color: 'var(--text-muted)' }}>{isUS ? '평가 ' : '★ '}</span>
+                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{consensus.rating.toFixed(2)}</span>
+                {consensus.opinionText && <span className="ml-1" style={{ color: 'var(--accent-yellow)' }}>{consensus.opinionText}</span>}
+                {!consensus.opinionText && <span style={{ color: 'var(--text-muted)' }}> ({consensus.analystCount}개)</span>}
               </div>
             )}
             {consensus.consensusEps != null && (

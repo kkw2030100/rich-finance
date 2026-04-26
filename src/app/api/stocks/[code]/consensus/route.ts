@@ -4,6 +4,26 @@ import { supaConsensus } from '@/lib/db-supabase';
 
 export const dynamic = 'force-dynamic';
 
+// 미국 종목 식별
+const isUSTicker = (code: string) => /^[A-Z][A-Z\.\-]{0,5}$/.test(code);
+
+// 네이버 미국 종목 컨센서스 (NASDAQ=.O, NYSE=.K 시도)
+async function fetchUSConsensus(code: string) {
+  const suffixes = ['.O', '.K', '.A', '.N'];
+  for (const sfx of suffixes) {
+    try {
+      const r = await fetch(`https://api.stock.naver.com/stock/${code}${sfx}/integration`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        next: { revalidate: 3600 }, // 1시간 캐시
+      });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j?.consensusInfo?.priceTargetMean) return j;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 /**
  * GET /api/stocks/{code}/consensus
  *
@@ -16,6 +36,60 @@ export async function GET(
 ) {
   try {
     const { code } = await params;
+
+    // 미국 종목: 네이버 API 직접 호출 (한국 DB에 컨센서스 없음)
+    if (isUSTicker(code)) {
+      const naver = await fetchUSConsensus(code);
+      if (!naver?.consensusInfo) {
+        return NextResponse.json({ error: 'No US consensus' }, { status: 404 });
+      }
+      const c = naver.consensusInfo;
+      // 현재가 — 같은 응답의 corporateOverview 또는 industryCompareInfo에서 가능, 없으면 별도 fetch
+      let currentPrice = 0;
+      try {
+        const priceRes = await fetch(`https://api.stock.naver.com/stock/${code}${c.reutersCode.slice(-2)}/basic`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          next: { revalidate: 300 },
+        });
+        if (priceRes.ok) {
+          const pj = await priceRes.json();
+          currentPrice = parseFloat(pj?.closePrice || pj?.tradePrice || '0');
+        }
+      } catch { /* ignore */ }
+
+      const targetMean = parseFloat(c.priceTargetMean);
+      const high = parseFloat(c.priceTargetHigh);
+      const low = parseFloat(c.priceTargetLow);
+      const recommMean = parseFloat(c.recommMean);
+      const upside = currentPrice > 0 ? Math.round((targetMean - currentPrice) / currentPrice * 1000) / 10 : null;
+
+      // recommMean (1~5) → 의견 텍스트
+      const opinionText = recommMean >= 4.5 ? '적극매수'
+        : recommMean >= 3.5 ? '매수'
+        : recommMean >= 2.5 ? '중립'
+        : recommMean >= 1.5 ? '매도'
+        : '적극매도';
+
+      return NextResponse.json({
+        code,
+        rating: recommMean,
+        targetPrice: targetMean,
+        targetPriceWeighted: targetMean,
+        targetPriceHigh: high,
+        targetPriceLow: low,
+        consensusEps: null,
+        consensusPer: null,
+        analystCount: 1200, // 레피니티브 1200개사
+        recentCount: 1200,
+        currentPrice,
+        upside,
+        currency: c.currencyType?.code || 'USD',
+        opinionText,
+        createDate: c.createDate,
+        analysts: [],
+        disclaimer: '레피니티브 1200개사 컨센서스. 투자 판단의 책임은 본인에게 있습니다.',
+      });
+    }
 
     if (!isLocalDb()) {
       const data = await supaConsensus(code);
