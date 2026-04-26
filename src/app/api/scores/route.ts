@@ -64,6 +64,11 @@ export async function GET(req: NextRequest) {
         tierCounts: {},
         engineScores: true,
         data,
+      }, {
+        headers: {
+          // Vercel edge cache 10분, 1시간까지 stale 허용
+          'Cache-Control': 's-maxage=600, stale-while-revalidate=3600',
+        },
       });
     }
 

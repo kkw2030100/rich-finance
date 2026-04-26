@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
 
     if (!isLocalDb()) {
       const result = await supaBreakout({ limit, newOnly, signalType: validType });
-      return NextResponse.json(result);
+      return NextResponse.json(result, {
+        headers: {
+          'Cache-Control': 's-maxage=600, stale-while-revalidate=3600',
+        },
+      });
     }
 
     const db = getDb();

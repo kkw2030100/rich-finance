@@ -20,7 +20,11 @@ export async function GET(req: NextRequest) {
 
     if (!isLocalDb()) {
       const data = await supaUndervalued({ mode, limit, tier: tier || undefined });
-      return NextResponse.json(data);
+      return NextResponse.json(data, {
+        headers: {
+          'Cache-Control': 's-maxage=600, stale-while-revalidate=3600',
+        },
+      });
     }
 
     const db = getDb();

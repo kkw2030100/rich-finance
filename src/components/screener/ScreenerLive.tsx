@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Loader2, ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search, X } from 'lucide-react';
 import { fetchScores, ScoreItem, formatMoney, formatPrice, formatPct, deriveTier, getCountry, isPreferredStock } from '@/lib/api';
+import { cachedFetch } from '@/lib/swrCache';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
@@ -158,28 +159,44 @@ export function ScreenerLive() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- 모든 모드 데이터 prefetch (마운트 1회) ----
+  // ---- 모든 모드 데이터 prefetch (마운트 1회, SWR 캐싱) ----
   useEffect(() => {
-    Promise.all([
-      // KR + US 동시 fetch — 전종목 universe
-      fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
-      fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => [] as ScoreItem[]),
-      fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/undervalued?mode=composite&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/undervalued?mode=analyst&limit=100').then(r => r.json()).catch(() => ({ data: [] })),
-    ]).then(([scoresKR, scoresUS, total, ttm, gap, composite, analyst]) => {
-      setAllScoreData([...scoresKR, ...scoresUS]);
+    type ScreenerData = { data: ScreenerItem[] };
+    const krC = cachedFetch<ScoreItem[]>('scores:kr', () => fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => []));
+    const usC = cachedFetch<ScoreItem[]>('scores:us', () => fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => []));
+    const tC = cachedFetch<ScreenerData>('uv:total', () => fetch('/api/undervalued?mode=total&limit=100').then(r => r.json()).catch(() => ({ data: [] })));
+    const ttmC = cachedFetch<ScreenerData>('uv:ttm', () => fetch('/api/undervalued?mode=ttm&limit=100').then(r => r.json()).catch(() => ({ data: [] })));
+    const gC = cachedFetch<ScreenerData>('uv:gap', () => fetch('/api/undervalued?mode=gap&limit=100').then(r => r.json()).catch(() => ({ data: [] })));
+    const compC = cachedFetch<ScreenerData>('uv:composite', () => fetch('/api/undervalued?mode=composite&limit=100').then(r => r.json()).catch(() => ({ data: [] })));
+    const aC = cachedFetch<ScreenerData>('uv:analyst', () => fetch('/api/undervalued?mode=analyst&limit=100').then(r => r.json()).catch(() => ({ data: [] })));
+
+    // 캐시가 있으면 즉시 페인트
+    const hasAnyCache = krC.cached || usC.cached || tC.cached || ttmC.cached || gC.cached || compC.cached || aC.cached;
+    if (hasAnyCache) {
+      setAllScoreData([...(krC.cached || []), ...(usC.cached || [])]);
       setModeData({
-        total: total.data || [],
-        ttm: ttm.data || [],
-        gap: gap.data || [],
-        composite: composite.data || [],
-        analyst: analyst.data || [],
+        total: tC.cached?.data || [],
+        ttm: ttmC.cached?.data || [],
+        gap: gC.cached?.data || [],
+        composite: compC.cached?.data || [],
+        analyst: aC.cached?.data || [],
       });
       setDataLoaded(true);
-    });
+    }
+
+    // 백그라운드에서 fresh 데이터로 갱신
+    Promise.all([krC.promise, usC.promise, tC.promise, ttmC.promise, gC.promise, compC.promise, aC.promise])
+      .then(([scoresKR, scoresUS, total, ttm, gap, composite, analyst]) => {
+        setAllScoreData([...scoresKR, ...scoresUS]);
+        setModeData({
+          total: total.data || [],
+          ttm: ttm.data || [],
+          gap: gap.data || [],
+          composite: composite.data || [],
+          analyst: analyst.data || [],
+        });
+        setDataLoaded(true);
+      });
   }, []);
 
   // ---- URL 동기화 (state → URL) ----
@@ -206,24 +223,28 @@ export function ScreenerLive() {
     prevModeRef.current = mode;
   }, [mode, countries, markets, tiers, showFavOnly, excludePreferred, stageFilter, search, hydrated, pathname, router]);
 
-  // 본격 상승 모드 진입 시 6가지 signal_type 통합 fetch (마운트 후)
+  // 본격 상승 모드 진입 시 6가지 signal_type 통합 fetch (SWR 캐싱)
   useEffect(() => {
     if (!hydrated) return;
     if (mode !== 'breakout') return;
     if (stagedSignals.length > 0) return;  // 이미 받았으면 skip
-    setBreakoutLoading(true);
+
+    type BreakoutResp = { data: { code: string; name: string; market: string; score: number; price: number | null; changePct: number | null; marketCap: number | null }[]; asOf?: string };
     const types = ['confluence', 'daily', 'weekly', 'mid_rapid', 'mid_steady', 'late_stage'];
-    Promise.all(types.map(t =>
-      fetch(`/api/breakout?limit=300&type=${t}`).then(r => r.json()).catch(() => ({ data: [] }))
-    )).then(results => {
-      // 종목별로 단계 합치기
+    const handles = types.map(t =>
+      cachedFetch<BreakoutResp>(`breakout:${t}`, () =>
+        fetch(`/api/breakout?limit=300&type=${t}`).then(r => r.json()).catch(() => ({ data: [] }))
+      )
+    );
+
+    function aggregate(results: BreakoutResp[]) {
       const byCode = new Map<string, StagedSignal>();
       let asOf: string | null = null;
       for (let i = 0; i < types.length; i++) {
         const t = types[i];
         const stage = STAGE_OF_TYPE[t];
-        if (results[i]?.asOf) asOf = results[i].asOf;
-        for (const item of results[i].data || []) {
+        if (results[i]?.asOf) asOf = results[i].asOf!;
+        for (const item of results[i]?.data || []) {
           let entry = byCode.get(item.code);
           if (!entry) {
             entry = {
@@ -239,7 +260,23 @@ export function ScreenerLive() {
           entry.maxScore = Math.max(entry.maxScore, item.score || 0);
         }
       }
-      setStagedSignals(Array.from(byCode.values()));
+      return { signals: Array.from(byCode.values()), asOf };
+    }
+
+    // 캐시 즉시 사용
+    const cachedResults = handles.map(h => h.cached).filter((x): x is BreakoutResp => x !== null);
+    if (cachedResults.length === types.length) {
+      const { signals, asOf } = aggregate(cachedResults);
+      setStagedSignals(signals);
+      setBreakoutMeta({ asOf });
+    } else {
+      setBreakoutLoading(true);
+    }
+
+    // 백그라운드 갱신
+    Promise.all(handles.map(h => h.promise)).then(results => {
+      const { signals, asOf } = aggregate(results);
+      setStagedSignals(signals);
       setBreakoutMeta({ asOf });
     }).finally(() => setBreakoutLoading(false));
   }, [mode, hydrated, stagedSignals.length]);
