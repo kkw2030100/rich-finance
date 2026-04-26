@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowUpDown, Loader2 } from 'lucide-react';
-import { ScoreItem, formatBillion, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
+import { ScoreItem, formatMarketCap, formatPct, getVerdictInfo, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 
@@ -148,7 +148,7 @@ export function StockTableLive({
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatBillion(stock.marketCap)}</div>
+                      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatMarketCap(stock.marketCap, stock.market)}</div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="text-sm" style={{ color: 'var(--text-primary)' }}>

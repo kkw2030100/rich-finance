@@ -116,6 +116,24 @@ export function formatBillion(n: number): string {
   return n.toLocaleString() + '억';
 }
 
+/**
+ * 시장별 시총 표시.
+ * - KR: 억원 단위 저장 → '조' / '억' 표기
+ * - US: 억USD 단위 저장 → $T / $B / $M 표기
+ *   (us_yahoo.py에서 marketCap_USD / 10^8 으로 저장 = 억USD)
+ */
+export function formatMarketCap(n: number | null | undefined, market: string): string {
+  if (n == null || n === 0) return '-';
+  const m = (market || '').toLowerCase();
+  if (m === 'us') {
+    // 억USD → $T(=10000), $B(=10), $M(=0.01)
+    if (n >= 10000) return '$' + (n / 10000).toFixed(2) + 'T';
+    if (n >= 10) return '$' + (n / 10).toFixed(1) + 'B';
+    return '$' + Math.round(n * 100).toLocaleString() + 'M';
+  }
+  return formatBillion(n);
+}
+
 export function formatPct(n: number | null | undefined): string {
   if (n == null) return 'N/A';
   const sign = n >= 0 ? '+' : '';

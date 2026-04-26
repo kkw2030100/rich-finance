@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Loader2, ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, BarChart3, Layers, Users, Rocket, Search, X } from 'lucide-react';
-import { fetchScores, ScoreItem, formatBillion, formatPct, deriveTier, getCountry } from '@/lib/api';
+import { fetchScores, ScoreItem, formatMarketCap, formatPct, deriveTier, getCountry } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { StockTableLive } from '@/components/stocks/StockTableLive';
@@ -539,7 +539,7 @@ export function ScreenerLive() {
                         {s.ret4w >= 0 ? '+' : ''}{s.ret4w.toFixed(1)}%
                       </td>
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {s.marketCap ? formatBillion(s.marketCap) : '-'}
+                        {formatMarketCap(s.marketCap, s.market)}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <div className="text-sm" style={{ color: 'var(--text-primary)' }}>
@@ -726,7 +726,7 @@ export function ScreenerLive() {
                       )}
 
                       <td className="px-3 py-3 text-right text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {formatBillion(stock.marketCap ?? 0)}
+                        {formatMarketCap(stock.marketCap, stock.market)}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{(stock.price ?? 0).toLocaleString()}원</div>

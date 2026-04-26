@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, BarChart3, TrendingUp, DollarSign, AlertTriangle, Loader2 } from 'lucide-react';
-import { fetchStockDetail, StockDetailResponse, formatBillion, formatPct, getVerdictInfo } from '@/lib/api';
+import { fetchStockDetail, StockDetailResponse, formatBillion, formatMarketCap, formatPct, getVerdictInfo } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
@@ -201,7 +201,7 @@ export function StockDetailLive({ code }: { code: string }) {
               { label: 'ROE', value: v.roe ? v.roe.toFixed(1) + '%' : 'N/A' },
               { label: '영업이익률', value: v.opMargin ? v.opMargin.toFixed(1) + '%' : 'N/A' },
               { label: 'EPS', value: v.eps ? v.eps.toLocaleString() + '원' : 'N/A' },
-              { label: '시가총액', value: formatBillion(data.marketCap) },
+              { label: '시가총액', value: formatMarketCap(data.marketCap, data.market) },
             ].map(r => (
               <div key={r.label} className="flex justify-between">
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.label}</span>
