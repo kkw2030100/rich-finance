@@ -31,7 +31,7 @@ const STAGE_META: Record<Stage, { label: string; emoji: string; color: string; b
   early:  { label: '초기',  emoji: '🌱', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
   rapid:  { label: '급등',  emoji: '⚡', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
   steady: { label: '상승',  emoji: '🐢', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
-  late:   { label: '위험',  emoji: '⚠️', color: '#facc15', bg: 'rgba(250,204,21,0.15)' },
+  late:   { label: '추격 위험',  emoji: '⚠️', color: '#facc15', bg: 'rgba(250,204,21,0.15)' },
 };
 
 const COUNTRIES: { key: string; label: string; disabled?: boolean }[] = [
@@ -570,7 +570,7 @@ export function ScreenerLive() {
               { key: 'early' as const, ...STAGE_META.early, label: '상승 초기' },
               { key: 'rapid' as const, ...STAGE_META.rapid, label: '급등 중' },
               { key: 'steady' as const, ...STAGE_META.steady, label: '상승 중' },
-              { key: 'late' as const, ...STAGE_META.late, label: '위험 단계' },
+              { key: 'late' as const, ...STAGE_META.late, label: '추격 위험' },
             ]).map(t => {
               const cnt = stageCounts[t.key];
               const active = stageFilter === t.key;
@@ -680,10 +680,10 @@ export function ScreenerLive() {
               <div>· <strong style={{ color: STAGE_META.early.color }}>🌱 상승 초기</strong> — Stage 1→2 진입 (주봉 베이스 돌파 / 일봉 MA60 돌파). 분할 매수 첫 진입</div>
               <div>· <strong style={{ color: STAGE_META.steady.color }}>🐢 상승 중</strong> — 20W MA 8주↑ 정배열. 메인 매수 시점 (백테스트 12w 중간 +2.7%, 승률 56%)</div>
               <div>· <strong style={{ color: STAGE_META.rapid.color }}>⚡ 급등 중</strong> — 5W MA 단기 강세. 추격 매수 (12w 중간 +1.4%, +30% 도달 22%)</div>
-              <div>· <strong style={{ color: STAGE_META.late.color }}>⚠️ 위험 단계</strong> — Parabolic 위험 (12w 중간 -5.4%, -10%↓ 손실률 44%). 매수 X, 보유 시 수익실현 검토</div>
+              <div>· <strong style={{ color: STAGE_META.late.color }}>⚠️ 추격 위험</strong> — Parabolic 단계 (12w 중간 -5.4%, -10%↓ 손실률 44%). 신규 매수 자제, 보유 시 수익실현 검토</div>
             </div>
             <div className="mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-              한 종목이 [상승 초기 + 상승 중] 동시 → 추세 확립 + 안정 진입. [급등 + 위험] 동시 → 강한 모멘텀이지만 추격 위험.
+              한 종목이 [상승 초기 + 상승 중] 동시 → 추세 확립 + 안정 진입. [급등 + 추격 위험] 동시 → 강한 모멘텀이지만 추격 자제.
             </div>
           </div>
         </>
