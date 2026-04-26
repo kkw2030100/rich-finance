@@ -687,7 +687,10 @@ export function ScreenerLive() {
                       <td className="px-3 py-3 text-right">
                         {(() => {
                           const strength = Math.round(s.maxScore / 20 * 100);  // 0~20 → 0~100 정규화
-                          const color = strength >= 80 ? 'var(--accent-red)' : strength >= 65 ? 'var(--accent-yellow)' : 'var(--text-primary)';
+                          // 신호등: 강함=녹, 중간=노랑, 약함=빨강
+                          const color = strength >= 80 ? 'var(--accent-green)'
+                                      : strength >= 60 ? 'var(--accent-yellow)'
+                                      : 'var(--accent-red)';
                           return (
                             <>
                               <span className="text-sm font-black" style={{ color }}>{strength}</span>
