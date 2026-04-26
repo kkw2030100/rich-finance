@@ -145,6 +145,8 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
   const targetLineRef = useRef<IPriceLine | null>(null);
   const analystLinesRef = useRef<IPriceLine[]>([]);
   const targetRangeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const scoreSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<Array<{ date: string; total: number }>>([]);
   const [analystPoints, setAnalystPoints] = useState<AnalystPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<AnalystPoint | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -176,6 +178,28 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       .then(d => d && !d.error ? setConsensus(d) : setConsensus(null))
       .catch(() => setConsensus(null));
   }, [code]);
+
+  // 종합점수 시계열
+  useEffect(() => {
+    fetch(`/api/stocks/${code}/score-history?weeks=80`)
+      .then(r => r.json())
+      .then(d => setScoreHistory(d?.data || []))
+      .catch(() => setScoreHistory([]));
+  }, [code]);
+
+  // 점수 시리즈에 데이터 set
+  useEffect(() => {
+    if (!scoreSeriesRef.current) return;
+    if (scoreHistory.length === 0) {
+      scoreSeriesRef.current.setData([]);
+      return;
+    }
+    const seriesData = scoreHistory.map(s => ({
+      time: dateToTime(s.date),
+      value: s.total,
+    }));
+    scoreSeriesRef.current.setData(seriesData);
+  }, [scoreHistory]);
 
   // 차트 초기화
   useEffect(() => {
@@ -258,6 +282,27 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+    });
+
+    // 종합점수 시리즈 (좌측 Y축, 0~100)
+    scoreSeriesRef.current = chart.addSeries(LineSeries, {
+      color: '#facc15', // 노랑
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      priceScaleId: 'score',
+      priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+    });
+    chart.priceScale('score').applyOptions({
+      scaleMargins: { top: 0.1, bottom: 0.3 },
+      borderColor: 'rgba(75, 85, 99, 0.3)',
+      autoScale: false,
+    });
+    // 0~100 범위 강제
+    scoreSeriesRef.current.applyOptions({
+      autoscaleInfoProvider: () => ({
+        priceRange: { minValue: 0, maxValue: 100 },
+      }),
     });
 
     // 리사이즈
@@ -620,12 +665,24 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
         );
       })()}
 
-      {/* MA 값 행 */}
+      {/* MA 값 행 + 종합점수 */}
       {(() => {
         const info = hoverInfo || lastBar;
         if (!info) return null;
         const fmtPrice = (v: number | null | undefined) =>
           v == null ? '-' : isUS ? '$' + v.toFixed(2) : Math.round(v).toLocaleString();
+        // 종합점수: hover된 날짜 또는 가장 최근
+        const latestScore = scoreHistory.length > 0 ? scoreHistory[scoreHistory.length - 1] : null;
+        const hoverScore = hoverInfo
+          ? scoreHistory.find(s => s.date === hoverInfo.date) || (() => {
+              // 가장 가까운 이전 점수
+              for (let i = scoreHistory.length - 1; i >= 0; i--) {
+                if (scoreHistory[i].date <= hoverInfo.date) return scoreHistory[i];
+              }
+              return null;
+            })()
+          : null;
+        const scoreToShow = hoverScore || latestScore;
         return (
           <div className="flex items-center gap-x-3 gap-y-1 mb-3 text-[11px] flex-wrap">
             {MA_CONFIGS.map((cfg, i) => (
@@ -635,6 +692,14 @@ export function CandleChart({ code, isUS = false }: CandleChartProps) {
                 <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtPrice(info.ma[i])}</span>
               </span>
             ))}
+            {scoreToShow && (
+              <span className="flex items-center gap-1 ml-2 pl-2" style={{ borderLeft: '1px solid var(--border)' }}>
+                <span className="w-3 h-0.5 inline-block" style={{ background: '#facc15' }} />
+                <span style={{ color: 'var(--text-muted)' }}>종합점수</span>
+                <span style={{ color: '#facc15', fontWeight: 700 }}>{scoreToShow.total.toFixed(1)}</span>
+                <span style={{ color: 'var(--text-muted)' }}>/100</span>
+              </span>
+            )}
           </div>
         );
       })()}
