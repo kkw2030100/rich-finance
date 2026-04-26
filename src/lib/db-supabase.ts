@@ -96,7 +96,7 @@ export async function supaScores(options: {
       score: d.total_score, verdict: d.verdict, confidence: d.confidence,
       reasons: d.reasons || [], risks: d.risks || [],
     };
-  }).filter(Boolean);
+  }).filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
 // ─── stock detail ───
@@ -195,11 +195,84 @@ export async function supaConsensus(code: string) {
 
 // ─── undervalued ───
 export async function supaUndervalued(options: { mode?: string; limit?: number; tier?: string }) {
-  const data = await supaScores({ ...options, sort: 'score', limit: options.limit || 30 });
+  const mode = options.mode || 'total';
+  const limit = options.limit || 30;
+
+  // analyst 모드: 별도 consensus 테이블 사용
+  if (mode === 'analyst') {
+    const { data: consensus } = await supabase
+      .from('consensus')
+      .select('ticker, rating, target_price, analyst_count, stocks!inner(name, market)')
+      .gt('target_price', 0)
+      .order('rating', { ascending: false })
+      .limit(300);
+
+    const tickers = (consensus || []).map(c => c.ticker);
+    const pricesRes = tickers.length > 0
+      ? await supabase.from('daily_prices').select('ticker, close, market_cap, trade_date')
+          .in('ticker', tickers).order('trade_date', { ascending: false })
+      : { data: [] };
+    const latestPrice: Record<string, { close: number; market_cap: number }> = {};
+    for (const p of pricesRes.data || []) {
+      if (!latestPrice[p.ticker]) latestPrice[p.ticker] = { close: p.close, market_cap: p.market_cap };
+    }
+
+    let analystData = (consensus || []).map(c => {
+      const stock = (c as Record<string, unknown>).stocks as { name: string; market: string };
+      const px = latestPrice[c.ticker];
+      const currentPrice = px?.close || 0;
+      const targetPrice = c.target_price || 0;
+      const upside = currentPrice > 0 ? Math.round((targetPrice - currentPrice) / currentPrice * 1000) / 10 : null;
+      const mcap = px?.market_cap || 0;
+      const tier = mcap >= 50000 ? '초대형주' : mcap >= 10000 ? '대형주' : mcap >= 3000 ? '중형주' : '소형주';
+      return {
+        code: c.ticker, name: stock.name, market: stock.market.toLowerCase(),
+        price: currentPrice, changePct: 0, marketCap: mcap, tier,
+        currentPrice, targetPriceWeighted: targetPrice, upside,
+        rating: c.rating, analystCount: c.analyst_count,
+        perTtm: null, porTtm: null, psrTtm: null,
+        niChange: null, mcapChange: null, niGapRatio: null,
+        turnaround: false, deficitTurn: false,
+        uiValue: null, uiQuality: null, uiIndex: null, uiQuadrant: null,
+        ttmRevenue: 0, ttmNi: 0, ttmOp: 0,
+        score: 0, verdict: 'hold',
+      };
+    });
+    if (options.tier && options.tier !== 'all') analystData = analystData.filter(d => d.tier === options.tier);
+    analystData.sort((a, b) => (b.upside ?? -999) - (a.upside ?? -999));
+    return { mode, modeLabel: '전문가 매수의견', totalCount: analystData.length, data: analystData.slice(0, limit) };
+  }
+
+  // 나머지 모드: 큰 pool 받아서 모드별 정렬
+  const pool = await supaScores({ ...options, sort: 'score', limit: 300 });
+
+  let sorted = [...pool];
+  switch (mode) {
+    case 'gap':
+      sorted.sort((a, b) => (b.niGapRatio ?? -9999) - (a.niGapRatio ?? -9999));
+      break;
+    case 'ttm':
+      // PER 데이터 없음 → score 높고 저평가(niGapRatio>0)인 종목 우선
+      sorted = sorted.filter(d => (d.niGapRatio ?? 0) > 0);
+      sorted.sort((a, b) => (b.niGapRatio ?? 0) - (a.niGapRatio ?? 0));
+      break;
+    case 'composite':
+      // 점수 + 괴리율 가중 합산 (저평가+고품질 프록시)
+      sorted.sort((a, b) => {
+        const sa = (a.score || 0) * 1.0 + (a.niGapRatio ?? 0) * 0.3;
+        const sb = (b.score || 0) * 1.0 + (b.niGapRatio ?? 0) * 0.3;
+        return sb - sa;
+      });
+      break;
+    default: // total
+      sorted.sort((a, b) => (b.score || 0) - (a.score || 0));
+  }
+
   return {
-    mode: options.mode || 'total',
-    modeLabel: { total: '종합 저평가', ttm: '지금 싼 종목', gap: '아직 덜 오른 종목', composite: '싸고 좋은 기업', analyst: '전문가 의견' }[options.mode || 'total'] || 'total',
-    totalCount: data.length, data,
+    mode,
+    modeLabel: { total: '종합 저평가', ttm: '지금 싼 종목', gap: '아직 덜 오른 종목', composite: '싸고 좋은 기업' }[mode] || mode,
+    totalCount: sorted.length,
+    data: sorted.slice(0, limit),
   };
 }
 
