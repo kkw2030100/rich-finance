@@ -15,6 +15,14 @@ const TIERS = [
   { key: '대형주', label: '대형 1~5조' },
   { key: '중형주', label: '중형 3천억~1조' },
   { key: '소형주', label: '소형 ~3천억' },
+  { key: '미국주식', label: '미국' },
+];
+
+const MARKETS = [
+  { key: 'all', label: '전체' },
+  { key: 'kospi', label: 'KOSPI' },
+  { key: 'kosdaq', label: 'KOSDAQ' },
+  { key: 'us', label: 'US' },
 ];
 
 export function StockTableLive() {
@@ -67,15 +75,15 @@ export function StockTableLive() {
     <div>
       {/* Filters */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {['all', 'kospi', 'kosdaq'].map(m => (
-          <button key={m} onClick={() => setFilterMarket(m)}
+        {MARKETS.map(m => (
+          <button key={m.key} onClick={() => setFilterMarket(m.key)}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             style={{
-              background: filterMarket === m ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
-              color: filterMarket === m ? 'var(--accent-blue)' : 'var(--text-secondary)',
+              background: filterMarket === m.key ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+              color: filterMarket === m.key ? 'var(--accent-blue)' : 'var(--text-secondary)',
               border: '1px solid var(--border)',
             }}>
-            {m === 'all' ? '전체' : m.toUpperCase()}
+            {m.label}
           </button>
         ))}
         <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />

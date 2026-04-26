@@ -9,8 +9,7 @@ import { chatCategories } from '@/data/chat-categories';
 
 const nav = [
   { href: '/', label: '홈', icon: Home },
-  { href: '/stocks', label: '종목 탐색', icon: Search },
-  { href: '/screener', label: '저평가 스크리너', icon: Filter },
+  { href: '/screener', label: '투자 종목 발굴', icon: Search },
   { href: '/market', label: '시장 현황', icon: Activity },
   { href: '/signals', label: '특수 신호', icon: Zap },
 ];

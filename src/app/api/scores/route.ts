@@ -120,6 +120,23 @@ export async function GET(req: NextRequest) {
         per: number | null; pbr: number | null; is_estimate: number;
       }>;
 
+      // 미국 종목: 재무 데이터 없으므로 시세 정보만
+      if (stock.market === 'us') {
+        return {
+          code: stock.code, name: stock.name, market: stock.market,
+          price: stock.price, changePct: stock.change_pct,
+          marketCap: stock.market_cap || 0,
+          tier: '미국주식', priceDate: stock.price_date,
+          perTtm: null, roe: null, pbr: null, debtRatio: null, opMargin: null,
+          uiValue: null, uiQuality: null, uiIndex: null, uiQuadrant: null,
+          niChange: null, opChange: null, mcapChange: null, niGapRatio: null,
+          turnaround: false, deficitTurn: false,
+          niGrowth: null, mcapGrowth: null, undervalueIndex: null,
+          ttmRevenue: 0, ttmNetIncome: 0, ttmOp: 0,
+          score: 0, verdict: 'na', confidence: 0, reasons: [], risks: [],
+        };
+      }
+
       if (quarters.length < 2) return null;
 
       // TTM (4분기 있으면 TTM, 아니면 있는 만큼)

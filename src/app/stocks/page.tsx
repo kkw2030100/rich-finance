@@ -1,20 +1,5 @@
-import { StockTableLive } from '@/components/stocks/StockTableLive';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default function StocksPage() {
-  return (
-    <div className="p-6 max-w-[1400px] mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-          종목 탐색
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-          순이익 증감율 vs 시총 증감율 — 괴리율이 클수록 저평가
-        </p>
-      </div>
-
-      <StockTableLive />
-    </div>
-  );
+export default function StocksRedirect() {
+  redirect('/screener');
 }

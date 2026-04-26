@@ -16,6 +16,37 @@ export async function supaScores(options: {
 }) {
   const limit = options.limit || 50;
 
+  // 미국 시장: scores 없음 — stocks + daily_prices만 조회
+  if (options.market === 'us' || options.tier === '미국주식') {
+    const stocksRes = await supabase
+      .from('stocks').select('ticker, name, market, sector')
+      .eq('market', 'US').eq('is_active', true).limit(limit);
+    const tickers = (stocksRes.data || []).map(s => s.ticker);
+    const pricesRes = tickers.length > 0
+      ? await supabase.from('daily_prices').select('ticker, close, market_cap, trade_date')
+          .in('ticker', tickers).order('trade_date', { ascending: false })
+      : { data: [] };
+    const latestPrice: Record<string, { close: number; market_cap: number | null; trade_date: string }> = {};
+    for (const p of pricesRes.data || []) {
+      if (!latestPrice[p.ticker]) latestPrice[p.ticker] = { close: p.close, market_cap: p.market_cap, trade_date: p.trade_date };
+    }
+    return (stocksRes.data || []).map(s => ({
+      code: s.ticker, name: s.name, market: 'us',
+      // 미국 종목은 cents 단위로 저장됨 → USD 환산
+      price: latestPrice[s.ticker] ? latestPrice[s.ticker].close / 100 : 0,
+      changePct: 0,
+      marketCap: latestPrice[s.ticker]?.market_cap || 0,
+      tier: '미국주식', priceDate: latestPrice[s.ticker]?.trade_date || '',
+      perTtm: null, roe: null, pbr: null, debtRatio: null, opMargin: null,
+      uiValue: null, uiQuality: null, uiIndex: null, uiQuadrant: null,
+      niChange: null, opChange: null, mcapChange: null, niGapRatio: null,
+      turnaround: false, deficitTurn: false,
+      niGrowth: null, mcapGrowth: null, undervalueIndex: null,
+      ttmRevenue: 0, ttmNetIncome: 0, ttmOp: 0,
+      score: 0, verdict: 'na', confidence: 0, reasons: [], risks: [],
+    }));
+  }
+
   let query = supabase
     .from('stock_scores')
     .select(`
@@ -213,4 +244,135 @@ export async function supaRiskHistory(market: string, period: string) {
 export async function supaRiskSignals(market: string) {
   const { data } = await supabase.from('market_risk_cache').select('data').eq('id', `signals_${market}`).single();
   return data?.data || { current: { risk: 0, date: '', cash_pct: 30, action: 'N/A' }, signals: [], totalSignals: 0 };
+}
+
+// ─── Stage 2 Breakout 신호 ───
+export async function supaBreakout(options: { limit?: number; newOnly?: boolean }) {
+  const limit = options.limit || 50;
+
+  // 가장 최근 스캔 날짜
+  const latestRes = await supabase
+    .from('stage2_signals')
+    .select('scan_date')
+    .order('scan_date', { ascending: false })
+    .limit(1);
+  const latest = latestRes.data?.[0]?.scan_date;
+  if (!latest) {
+    return { data: [], asOf: null, prevDate: null, newCount: 0, keptCount: 0 };
+  }
+
+  // 이전 스캔 날짜
+  const prevRes = await supabase
+    .from('stage2_signals')
+    .select('scan_date')
+    .lt('scan_date', latest)
+    .order('scan_date', { ascending: false })
+    .limit(1);
+  const prev = prevRes.data?.[0]?.scan_date || null;
+
+  // 오늘 신호 종목 (FK 없으므로 별도 stocks 조회)
+  const todayRes = await supabase
+    .from('stage2_signals')
+    .select('ticker, score, box_pos, ma_diff, ma60_slope, vol_ratio, ret_4w, confirmed')
+    .eq('scan_date', latest)
+    .order('score', { ascending: false })
+    .limit(limit);
+
+  const sigRows = (todayRes.data || []) as Array<{
+    ticker: string; score: number; box_pos: number; ma_diff: number;
+    ma60_slope: number; vol_ratio: number; ret_4w: number; confirmed: boolean;
+  }>;
+
+  const tickersOnly = sigRows.map(r => r.ticker);
+  const stockRes = tickersOnly.length > 0 ? await supabase
+    .from('stocks')
+    .select('ticker, name, market')
+    .in('ticker', tickersOnly) : { data: [] };
+  const stockMap = new Map<string, { name: string; market: string }>(
+    (stockRes.data || []).map(s => [s.ticker, { name: s.name, market: s.market }])
+  );
+
+  const todayRows = sigRows.map(r => ({
+    ...r,
+    stocks: stockMap.get(r.ticker) || { name: r.ticker, market: 'KOSPI' },
+  }));
+
+  // 어제 종목 set
+  const prevCodes = new Set<string>();
+  if (prev) {
+    const prevSig = await supabase
+      .from('stage2_signals')
+      .select('ticker')
+      .eq('scan_date', prev);
+    for (const r of prevSig.data || []) prevCodes.add(r.ticker);
+  }
+
+  // 가장 최근 시세
+  const tickers = todayRows.map(r => r.ticker);
+  const priceMap = new Map<string, { close: number; change_pct: number; market_cap: number | null }>();
+  if (tickers.length > 0) {
+    const priceRes = await supabase
+      .from('daily_prices')
+      .select('ticker, close, market_cap, trade_date')
+      .in('ticker', tickers)
+      .order('trade_date', { ascending: false });
+    for (const p of priceRes.data || []) {
+      if (!priceMap.has(p.ticker)) {
+        priceMap.set(p.ticker, { close: p.close, change_pct: 0, market_cap: p.market_cap });
+      }
+    }
+  }
+
+  // 첫 발견일 — 종목별로 30일 이내 연속 신호의 가장 오래된 날짜
+  const firstSeenMap = new Map<string, string>();
+  for (const r of todayRows) {
+    const histRes = await supabase
+      .from('stage2_signals')
+      .select('scan_date')
+      .eq('ticker', r.ticker)
+      .order('scan_date', { ascending: false });
+    const dates = (histRes.data || []).map(d => d.scan_date);
+    let first = dates[0];
+    for (let i = 1; i < dates.length; i++) {
+      const dPrev = new Date(dates[i-1]);
+      const dCurr = new Date(dates[i]);
+      const gap = Math.abs((dPrev.getTime() - dCurr.getTime()) / 86400000);
+      if (gap > 7) break;
+      first = dates[i];
+    }
+    firstSeenMap.set(r.ticker, first);
+  }
+
+  const data = todayRows
+    .map(r => ({
+      code: r.ticker,
+      name: r.stocks.name,
+      market: r.stocks.market,
+      score: r.score,
+      boxPos: r.box_pos,
+      maDiff: r.ma_diff,
+      ma60Slope: r.ma60_slope,
+      volRatio: r.vol_ratio,
+      ret4w: r.ret_4w,
+      confirmed: r.confirmed,
+      isNew: !prevCodes.has(r.ticker),
+      firstSeen: firstSeenMap.get(r.ticker) || latest,
+      price: (() => {
+        const p = priceMap.get(r.ticker)?.close;
+        if (p == null) return null;
+        // 미국 종목은 cents → USD
+        return r.stocks.market === 'US' ? p / 100 : p;
+      })(),
+      changePct: priceMap.get(r.ticker)?.change_pct ?? null,
+      marketCap: priceMap.get(r.ticker)?.market_cap ?? null,
+    }))
+    .filter(d => !options.newOnly || d.isNew);
+
+  return {
+    data,
+    asOf: latest,
+    prevDate: prev,
+    newCount: data.filter(d => d.isNew).length,
+    keptCount: data.filter(d => !d.isNew).length,
+  };
 }
