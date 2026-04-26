@@ -6,7 +6,6 @@ import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, BarChart3, TrendingUp,
 import { fetchStockDetail, StockDetailResponse, formatBillion, formatPct, getVerdictInfo } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
-import { ConsensusSection } from '@/components/stocks/ConsensusSection';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
 import { ScoreBreakdown } from '@/components/stocks/ScoreBreakdown';
 import dynamic from 'next/dynamic';
@@ -276,10 +275,6 @@ export function StockDetailLive({ code }: { code: string }) {
         </div>
       </div>
 
-      {/* Consensus */}
-      <div className="mb-4">
-        <ConsensusSection code={code} />
-      </div>
     </div>
   );
 }
