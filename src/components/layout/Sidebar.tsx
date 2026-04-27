@@ -3,13 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle, ChevronDown, Zap, Filter } from 'lucide-react';
+import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle, ChevronDown, Zap, Briefcase, LogIn, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { chatCategories } from '@/data/chat-categories';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 const nav = [
   { href: '/', label: '홈', icon: Home },
   { href: '/screener', label: '투자 종목 발굴', icon: Search },
+  { href: '/portfolio', label: '내 포트폴리오', icon: Briefcase },
   { href: '/market', label: '시장 현황', icon: Activity },
   { href: '/signals', label: '특수 신호', icon: Zap },
 ];
@@ -18,6 +20,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const isChatActive = pathname.startsWith('/chat');
   const [chatOpen, setChatOpen] = useState(isChatActive);
+  const { user, signOut } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[220px] flex flex-col"
@@ -103,6 +106,31 @@ export function Sidebar() {
           </div>
         )}
       </nav>
+
+      {/* User / Auth */}
+      <div className="px-3 py-3" style={{ borderTop: '1px solid var(--border)' }}>
+        {user ? (
+          <div className="flex items-center justify-between px-2">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>
+                {user.user_metadata?.name || user.email}
+              </div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{user.email}</div>
+            </div>
+            <button onClick={() => signOut()} title="로그아웃"
+              className="p-1.5 rounded cursor-pointer"
+              style={{ color: 'var(--text-muted)' }}>
+              <LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <Link href="/login"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{ background: 'rgba(59,130,246,0.12)', color: '#6ea8fe' }}>
+            <LogIn size={14} /> 로그인
+          </Link>
+        )}
+      </div>
 
       {/* Footer */}
       <div className="px-5 py-4 text-[10px]" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
