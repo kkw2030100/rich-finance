@@ -14,7 +14,7 @@ type Mode = 'all' | 'total' | 'ttm' | 'gap' | 'composite' | 'analyst' | 'breakou
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof Layers; color: string }[] = [
   { key: 'all', label: '전종목', desc: '시장/시총/관심종목 자유 탐색', icon: Search, color: 'var(--accent-blue)' },
-  { key: 'breakout', label: '본격 상승', desc: 'Stage 1→2 진입부터 본격 추세 진행까지 — 한 종목의 모든 단계를 배지로 동시 표시', icon: Rocket, color: 'var(--accent-red)' },
+  { key: 'breakout', label: '본격 상승', desc: 'Stage 1→2 진입부터 본격 추세 진행까지 — 한 종목의 모든 단계를 배지로 동시 표시 · 거래대금 100억+ 종목만 (실매매 가능 유동성 필터)', icon: Rocket, color: 'var(--accent-red)' },
   { key: 'total', label: '종합 저평가', desc: '모든 기준을 종합한 점수', icon: Layers, color: 'var(--accent-blue)' },
   { key: 'ttm', label: '지금 싼 종목', desc: '벌고 있는 돈에 비해 가격이 싼 종목', icon: DollarSign, color: 'var(--accent-green)' },
   { key: 'gap', label: '아직 덜 오른 종목', desc: '돈을 더 잘 벌게 됐는데 가격이 안 오른 종목', icon: TrendingUp, color: 'var(--accent-purple)' },
