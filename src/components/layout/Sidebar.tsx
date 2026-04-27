@@ -7,6 +7,7 @@ import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle, ChevronDo
 import clsx from 'clsx';
 import { chatCategories } from '@/data/chat-categories';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useSellAlerts } from '@/lib/useSellAlerts';
 
 const nav = [
   { href: '/', label: '홈', icon: Home },
@@ -21,6 +22,7 @@ export function Sidebar() {
   const isChatActive = pathname.startsWith('/chat');
   const [chatOpen, setChatOpen] = useState(isChatActive);
   const { user, signOut } = useAuth();
+  const { alertCount } = useSellAlerts();
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[220px] flex flex-col"
@@ -46,6 +48,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 mt-2 overflow-y-auto">
         {nav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+          const showAlert = href === '/portfolio' && alertCount > 0;
           return (
             <Link key={href} href={href}
               className={clsx(
@@ -57,7 +60,14 @@ export function Sidebar() {
                 color: active ? '#6ea8fe' : 'var(--text-secondary)',
               }}>
               <Icon size={18} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {showAlert && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'var(--accent-yellow)', color: '#1a1a1a' }}
+                  title={`추격 위험 단계 진입한 보유 종목 ${alertCount}개`}>
+                  🚨 {alertCount}
+                </span>
+              )}
             </Link>
           );
         })}

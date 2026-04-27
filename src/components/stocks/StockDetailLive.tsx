@@ -3,9 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, BarChart3, TrendingUp, DollarSign, AlertTriangle, Loader2 } from 'lucide-react';
-import { fetchStockDetail, StockDetailResponse, formatMoney, formatPct, getVerdictInfo } from '@/lib/api';
+import { fetchStockDetail, StockDetailResponse, formatMoney, formatPrice, formatPct, getVerdictInfo } from '@/lib/api';
 import { useFavorites } from '@/lib/useFavorites';
+import { useHoldings } from '@/lib/useHoldings';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
+import { AddHoldingModal } from '@/components/portfolio/AddHoldingModal';
+import { Plus, Briefcase, Edit2, Trash2 } from 'lucide-react';
 import { Stage2SignalSection } from '@/components/stocks/Stage2SignalSection';
 import { ScoreBreakdown } from '@/components/stocks/ScoreBreakdown';
 import dynamic from 'next/dynamic';
@@ -20,7 +24,11 @@ export function StockDetailLive({ code }: { code: string }) {
   const [data, setData] = useState<StockDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAddHolding, setShowAddHolding] = useState(false);
   const { toggle, isFavorite } = useFavorites();
+  const { user } = useAuth();
+  const { holdings, add, remove } = useHoldings();
+  const myHolding = holdings.find(h => h.ticker === code);
 
   useEffect(() => {
     fetchStockDetail(code)
@@ -102,8 +110,65 @@ export function StockDetailLive({ code }: { code: string }) {
               {isUp ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
               {formatPct(data.changePct)}
             </div>
+            {/* 보유 추가 버튼 (로그인 + 미보유 시만) */}
+            {user && !myHolding && (
+              <button onClick={() => setShowAddHolding(true)}
+                className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ml-auto"
+                style={{ background: 'var(--accent-blue)', color: 'white' }}>
+                <Plus size={12} /> 보유 추가
+              </button>
+            )}
           </div>
         </div>
+
+        {/* 보유 중 정보 (보유한 종목만) */}
+        {myHolding && (() => {
+          const pnl = data.price ? ((data.price - myHolding.buy_price) / myHolding.buy_price) * 100 : null;
+          const pnlValue = pnl != null && myHolding.quantity ? (data.price! - myHolding.buy_price) * myHolding.quantity : null;
+          return (
+            <div className="rounded-xl p-3 mb-4 flex items-center gap-4 flex-wrap"
+              style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
+              <div className="flex items-center gap-2">
+                <Briefcase size={16} style={{ color: 'var(--accent-green)' }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--accent-green)' }}>보유 중</span>
+              </div>
+              <div className="text-xs">
+                <span style={{ color: 'var(--text-muted)' }}>매수가</span>
+                <span className="ml-1 font-bold" style={{ color: 'var(--text-primary)' }}>{formatPrice(myHolding.buy_price, data.market)}</span>
+              </div>
+              {myHolding.quantity && (
+                <div className="text-xs">
+                  <span style={{ color: 'var(--text-muted)' }}>수량</span>
+                  <span className="ml-1 font-bold" style={{ color: 'var(--text-primary)' }}>{myHolding.quantity.toLocaleString()}주</span>
+                </div>
+              )}
+              {pnl != null && (
+                <div className="text-xs">
+                  <span style={{ color: 'var(--text-muted)' }}>손익률</span>
+                  <span className="ml-1 font-bold" style={{ color: pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                    {formatPct(pnl)}
+                  </span>
+                  {pnlValue != null && (
+                    <span className="ml-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      ({pnlValue >= 0 ? '+' : ''}{formatMoney(Math.round(pnlValue / 100000000), data.market)})
+                    </span>
+                  )}
+                </div>
+              )}
+              {myHolding.buy_date && (
+                <div className="text-xs">
+                  <span style={{ color: 'var(--text-muted)' }}>매수일</span>
+                  <span className="ml-1" style={{ color: 'var(--text-primary)' }}>{myHolding.buy_date}</span>
+                </div>
+              )}
+              <button onClick={() => { if (confirm('보유 기록을 삭제하시겠습니까?')) remove(myHolding.id); }}
+                className="ml-auto p-1.5 rounded cursor-pointer" title="삭제"
+                style={{ color: 'var(--text-muted)' }}>
+                <Trash2 size={12} />
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Score bar + Breakdown — 50/50 분할 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
@@ -275,6 +340,14 @@ export function StockDetailLive({ code }: { code: string }) {
         </div>
       </div>
 
+      {/* 보유 추가 모달 */}
+      {showAddHolding && (
+        <AddHoldingModal
+          onClose={() => setShowAddHolding(false)}
+          onAdd={async (h) => { await add(h); setShowAddHolding(false); }}
+          initial={{ code: data.code, name: data.name, market: data.market }}
+        />
+      )}
     </div>
   );
 }

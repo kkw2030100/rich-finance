@@ -10,13 +10,14 @@ interface SearchResult {
   market: string;
 }
 
-export function AddHoldingModal({ onClose, onAdd }: {
+export function AddHoldingModal({ onClose, onAdd, initial }: {
   onClose: () => void;
   onAdd: (h: NewHolding) => Promise<void>;
+  initial?: { code: string; name: string; market: string };
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [selected, setSelected] = useState<SearchResult | null>(null);
+  const [selected, setSelected] = useState<SearchResult | null>(initial ?? null);
   const [buyPrice, setBuyPrice] = useState('');
   const [quantity, setQuantity] = useState('');
   const [buyDate, setBuyDate] = useState(new Date().toISOString().slice(0, 10));
