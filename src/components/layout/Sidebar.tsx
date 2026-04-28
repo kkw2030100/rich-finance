@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle, ChevronDown, Zap, Briefcase, LogIn, LogOut, X } from 'lucide-react';
+import { BarChart3, Home, TrendingUp, Activity, Search, MessageCircle, ChevronDown, Zap, Briefcase, LogIn, LogOut, X, Map } from 'lucide-react';
 import clsx from 'clsx';
 import { chatCategories } from '@/data/chat-categories';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -12,6 +12,7 @@ import { useSellAlerts } from '@/lib/useSellAlerts';
 const nav = [
   { href: '/', label: '홈', icon: Home },
   { href: '/screener', label: '투자 종목 발굴', icon: Search },
+  { href: '/map', label: '투자 지도', icon: Map },
   { href: '/portfolio', label: '내 포트폴리오', icon: Briefcase },
   { href: '/market', label: '시장 현황', icon: Activity },
   { href: '/signals', label: '특수 신호', icon: Zap },
