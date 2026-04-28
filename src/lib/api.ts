@@ -22,6 +22,7 @@ export interface ScoreItem {
   deficitTurn: boolean;
   // 하위 호환
   niGrowth: number | null;
+  opGrowth: number | null;
   mcapGrowth: number | null;
   undervalueIndex: number | null;
   ttmRevenue: number;
@@ -31,10 +32,21 @@ export interface ScoreItem {
   verdict: string;
 }
 
+export interface PeriodInfo {
+  key: string;       // 'q3m' | 'q6m' | 'q9m' | 'q1y' | 'q1.5y' | 'a1y' | 'a2y' | 'a3y' | '1y_default'
+  label: string;     // '3개월' 등
+  unit: 'quarter' | 'annual';
+  days: number;
+  from: string;      // YYYY-MM-DD
+  to: string;        // YYYY-MM-DD
+}
+
 export interface ScoresResponse {
   timestamp: string;
   totalCount: number;
   distribution: Record<string, number>;
+  dataSource?: 'local' | 'supabase';
+  periodInfo?: PeriodInfo;
   data: ScoreItem[];
 }
 
@@ -94,12 +106,14 @@ export async function fetchScores(params?: {
   sort?: string;
   limit?: number;
   tier?: string;
+  period?: string;  // '3m' | '6m' | '1y' | '3y'
 }): Promise<ScoresResponse> {
   const sp = new URLSearchParams();
   if (params?.market && params.market !== 'all') sp.set('market', params.market);
   if (params?.sort) sp.set('sort', params.sort);
   if (params?.limit) sp.set('limit', String(params.limit));
   if (params?.tier && params.tier !== 'all') sp.set('tier', params.tier);
+  if (params?.period && params.period !== '1y') sp.set('period', params.period);
   const res = await fetch(`${BASE}/api/scores?${sp.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch scores');
   return res.json();

@@ -46,6 +46,23 @@ function getTier(mcap: number): string {
   return '소형주';
 }
 
+// 기간별 설정 (period param 명시 시 새 로직 사용)
+// - unit: 'quarter' = 분기 단위 YoY 단일분기 비교 / 'annual' = 연간 데이터 비교
+// - shift: quarter는 분기 shift, annual은 연도 shift
+// - days: 시총 비교 기준일 (오늘 - days)
+// period param 미지정 시 기존 TTM-vs-TTM 동작 유지 (스크리너 등 backward compat)
+type Unit = 'quarter' | 'annual';
+const PERIOD_CONFIG: Record<string, { unit: Unit; shift: number; days: number; label: string }> = {
+  'q3m':   { unit: 'quarter', shift: 1, days: 91,   label: '3개월' },
+  'q6m':   { unit: 'quarter', shift: 2, days: 182,  label: '6개월' },
+  'q9m':   { unit: 'quarter', shift: 3, days: 273,  label: '9개월' },
+  'q1y':   { unit: 'quarter', shift: 4, days: 365,  label: '1년' },
+  'q1.5y': { unit: 'quarter', shift: 6, days: 547,  label: '1.5년' },
+  'a1y':   { unit: 'annual',  shift: 1, days: 365,  label: '1년 (연도)' },
+  'a2y':   { unit: 'annual',  shift: 2, days: 730,  label: '2년 (연도)' },
+  'a3y':   { unit: 'annual',  shift: 3, days: 1095, label: '3년 (연도)' },
+};
+
 export async function GET(req: NextRequest) {
   try {
     const params = req.nextUrl.searchParams;
@@ -53,16 +70,26 @@ export async function GET(req: NextRequest) {
     const sort = params.get('sort') || 'undervalue';
     const tier = params.get('tier') || 'all';
     const limit = parseInt(params.get('limit') || '50');
+    const periodKey = params.get('period');  // undefined = 기본 동작 (TTM-vs-TTM)
+    const periodCfg = periodKey ? PERIOD_CONFIG[periodKey] : null;
+    const useExplicitPeriod = !!periodCfg;
 
     // Supabase 폴백 (Vercel 배포 시 brain.db 없음)
+    // 주의: Supabase는 1년 스냅샷만 지원 — period 무시 + opGrowth 없음
     if (!isLocalDb()) {
       const data = await supaScores({ market, tier, sort, limit });
+      const supaPeriodInfo = {
+        key: '1y', label: '1년', unit: 'quarter' as Unit, days: 365,
+        from: '', to: new Date().toISOString().slice(0, 10),
+      };
       return NextResponse.json({
         timestamp: new Date().toISOString(),
         totalCount: data.length,
         distribution: {},
         tierCounts: {},
         engineScores: true,
+        dataSource: 'supabase',
+        periodInfo: supaPeriodInfo,
         data,
       }, {
         headers: {
@@ -114,12 +141,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // 명시적 period 사용 시 cutoff 날짜 미리 계산
+    const cutoffDateStr = useExplicitPeriod ? (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - periodCfg!.days);
+      return d.toISOString().slice(0, 10);
+    })() : '';
+    // 분기 데이터 limit: 기본 8 (TTM-vs-TTM), explicit quarter는 shift+1, annual은 8 충분
+    const quartersLimit = useExplicitPeriod && periodCfg!.unit === 'quarter'
+      ? Math.max(8, periodCfg!.shift + 1)
+      : 8;
+
     const results = stocks.map(stock => {
       const quarters = db.prepare(`
         SELECT * FROM financials
         WHERE code = ? AND period_type = 'quarter'
-        ORDER BY period DESC LIMIT 8
-      `).all(stock.code) as Array<{
+        ORDER BY period DESC LIMIT ?
+      `).all(stock.code, quartersLimit) as Array<{
         period: string; revenue: number; operating_profit: number; net_income: number;
         op_margin: number | null; roe: number | null; debt_ratio: number | null;
         per: number | null; pbr: number | null; is_estimate: number;
@@ -136,7 +174,7 @@ export async function GET(req: NextRequest) {
           uiValue: null, uiQuality: null, uiIndex: null, uiQuadrant: null,
           niChange: null, opChange: null, mcapChange: null, niGapRatio: null,
           turnaround: false, deficitTurn: false,
-          niGrowth: null, mcapGrowth: null, undervalueIndex: null,
+          niGrowth: null, opGrowth: null, mcapGrowth: null, undervalueIndex: null,
           ttmRevenue: 0, ttmNetIncome: 0, ttmOp: 0,
           score: 0, verdict: 'na', confidence: 0, reasons: [], risks: [],
         };
@@ -164,29 +202,77 @@ export async function GET(req: NextRequest) {
       let turnaround = false;                 // 흑자전환
       let deficitTurn = false;                // 적자전환
 
-      // 시총 증감액 (1년 전 대비)
-      const yearAgoPrice = db.prepare(`
-        SELECT market_cap FROM daily_prices
-        WHERE code = ? AND market_cap > 0
-        ORDER BY date ASC LIMIT 1
-      `).get(stock.code) as { market_cap: number } | undefined;
+      // 시총 증감액 (기간 전 대비)
+      // 기본 (period 미지정): 가장 오래된 기록 (≈1년 전, 기존 동작)
+      // 명시적 period: cutoff 날짜 기준
+      const periodAgoPrice = useExplicitPeriod
+        ? db.prepare(`
+            SELECT market_cap FROM daily_prices
+            WHERE code = ? AND market_cap > 0 AND date <= ?
+            ORDER BY date DESC LIMIT 1
+          `).get(stock.code, cutoffDateStr) as { market_cap: number } | undefined
+        : db.prepare(`
+            SELECT market_cap FROM daily_prices
+            WHERE code = ? AND market_cap > 0
+            ORDER BY date ASC LIMIT 1
+          `).get(stock.code) as { market_cap: number } | undefined;
 
-      if (yearAgoPrice && yearAgoPrice.market_cap > 0) {
-        mcapChange = stock.market_cap - yearAgoPrice.market_cap;
+      if (periodAgoPrice && periodAgoPrice.market_cap > 0) {
+        mcapChange = stock.market_cap - periodAgoPrice.market_cap;
       }
 
-      // 순이익/영업이익 증감액 계산
-      if (quarters.length >= 8) {
-        // TTM 기반 (최근 4분기 vs 이전 4분기)
+      // 순이익/영업이익 증감액
+      // 1) 명시적 period + annual: 연간 보고서 비교 (shift년 차이 검증)
+      // 2) 명시적 period + quarter: YoY 단일분기 비교 (Q[0] vs Q[shift])
+      // 3) 기본: TTM-vs-TTM (8Q 윈도우, 기존 동작)
+      let prevNiForGrowth = 0;  // niGrowth 계산용
+      let prevOpForGrowth = 0;  // opGrowth 계산용
+
+      if (useExplicitPeriod && periodCfg!.unit === 'annual') {
+        // 연도 단위: 가장 최근 annual의 연도(X)와 X-shift년 record를 명시적 매칭
+        // 추정치(E)도 포함 — 2026.12(E) vs 2023.12 같은 비교가 KOSPI에서 가장 흔함
+        const annuals = db.prepare(`
+          SELECT period, net_income, operating_profit FROM financials
+          WHERE code = ? AND period_type = 'annual'
+          ORDER BY period DESC
+        `).all(stock.code) as Array<{ period: string; net_income: number; operating_profit: number }>;
+        if (annuals.length >= 2) {
+          const recentA = annuals[0];
+          const recentYear = parseInt(recentA.period.slice(0, 4));
+          const targetYear = recentYear - periodCfg!.shift;
+          const prevA = annuals.find(a => parseInt(a.period.slice(0, 4)) === targetYear);
+          if (prevA) {
+            niChange = (recentA.net_income || 0) - (prevA.net_income || 0);
+            opChange = (recentA.operating_profit || 0) - (prevA.operating_profit || 0);
+            prevNiForGrowth = prevA.net_income || 0;
+            prevOpForGrowth = prevA.operating_profit || 0;
+            if ((prevA.net_income || 0) <= 0 && (recentA.net_income || 0) > 0) turnaround = true;
+            if ((prevA.net_income || 0) > 0 && (recentA.net_income || 0) <= 0) deficitTurn = true;
+          }
+        }
+      } else if (useExplicitPeriod && periodCfg!.unit === 'quarter') {
+        // 분기 YoY 단일분기: Q[0] vs Q[shift] (전년 동기 대비 스타일)
+        const sh = periodCfg!.shift;
+        if (quarters.length > sh) {
+          const recentQ = quarters[0];
+          const prevQ = quarters[sh];
+          niChange = (recentQ.net_income || 0) - (prevQ.net_income || 0);
+          opChange = (recentQ.operating_profit || 0) - (prevQ.operating_profit || 0);
+          prevNiForGrowth = prevQ.net_income || 0;
+          prevOpForGrowth = prevQ.operating_profit || 0;
+          if ((prevQ.net_income || 0) <= 0 && (recentQ.net_income || 0) > 0) turnaround = true;
+          if ((prevQ.net_income || 0) > 0 && (recentQ.net_income || 0) <= 0) deficitTurn = true;
+        }
+      } else if (quarters.length >= 8) {
+        // 기본: TTM-vs-TTM (기존 동작)
         const recentNi = quarters.slice(0, 4).reduce((s, q) => s + (q.net_income || 0), 0);
         const prevNi = quarters.slice(4, 8).reduce((s, q) => s + (q.net_income || 0), 0);
         niChange = recentNi - prevNi;
-
         const recentOp = quarters.slice(0, 4).reduce((s, q) => s + (q.operating_profit || 0), 0);
         const prevOp = quarters.slice(4, 8).reduce((s, q) => s + (q.operating_profit || 0), 0);
         opChange = recentOp - prevOp;
-
-        // 흑자전환/적자전환
+        prevNiForGrowth = prevNi;
+        prevOpForGrowth = prevOp;
         if (prevNi <= 0 && recentNi > 0) turnaround = true;
         if (prevNi > 0 && recentNi <= 0) deficitTurn = true;
       } else if (quarters.length >= 2) {
@@ -195,6 +281,8 @@ export async function GET(req: NextRequest) {
         const prev = quarters[1];
         niChange = (curr.net_income || 0) - (prev.net_income || 0);
         opChange = (curr.operating_profit || 0) - (prev.operating_profit || 0);
+        prevNiForGrowth = prev.net_income || 0;
+        prevOpForGrowth = prev.operating_profit || 0;
 
         if ((prev.net_income || 0) <= 0 && (curr.net_income || 0) > 0) turnaround = true;
         if ((prev.net_income || 0) > 0 && (curr.net_income || 0) <= 0) deficitTurn = true;
@@ -226,16 +314,18 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 하위 호환: niGrowth, mcapGrowth, undervalueIndex도 유지
+      // 증감율 (위에서 계산한 niChange/prevNiForGrowth로부터 도출)
       let niGrowth: number | null = null;
+      let opGrowth: number | null = null;
       let mcapGrowth: number | null = null;
-      if (yearAgoPrice && yearAgoPrice.market_cap > 0) {
-        mcapGrowth = ((stock.market_cap - yearAgoPrice.market_cap) / yearAgoPrice.market_cap) * 100;
+      if (periodAgoPrice && periodAgoPrice.market_cap > 0) {
+        mcapGrowth = ((stock.market_cap - periodAgoPrice.market_cap) / periodAgoPrice.market_cap) * 100;
       }
-      if (quarters.length >= 8) {
-        const recentNi = quarters.slice(0, 4).reduce((s, q) => s + (q.net_income || 0), 0);
-        const prevNi = quarters.slice(4, 8).reduce((s, q) => s + (q.net_income || 0), 0);
-        if (prevNi !== 0) niGrowth = ((recentNi - prevNi) / Math.abs(prevNi)) * 100;
+      if (niChange !== null && prevNiForGrowth !== 0) {
+        niGrowth = (niChange / Math.abs(prevNiForGrowth)) * 100;
+      }
+      if (opChange !== null && prevOpForGrowth !== 0) {
+        opGrowth = (opChange / Math.abs(prevOpForGrowth)) * 100;
       }
       const undervalueIndex = niGapRatio;
 
@@ -317,6 +407,7 @@ export async function GET(req: NextRequest) {
         deficitTurn,
         // 하위 호환 (증감율 기반)
         niGrowth: niGrowth ? Math.round(niGrowth * 10) / 10 : null,
+        opGrowth: opGrowth ? Math.round(opGrowth * 10) / 10 : null,
         mcapGrowth: mcapGrowth ? Math.round(mcapGrowth * 10) / 10 : null,
         undervalueIndex: undervalueIndex ? Math.round(undervalueIndex * 10) / 10 : null,
         ttmRevenue,
@@ -372,12 +463,28 @@ export async function GET(req: NextRequest) {
     const tierCounts = { '초대형주': 0, '대형주': 0, '중형주': 0, '소형주': 0 };
     results.forEach(r => { if (r) tierCounts[r.tier as keyof typeof tierCounts]++; });
 
+    // 기간 메타 (UI 라벨용)
+    const today = new Date();
+    const days = useExplicitPeriod ? periodCfg!.days : 365;
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - days);
+    const periodInfo = {
+      key: periodKey || '1y_default',
+      label: useExplicitPeriod ? periodCfg!.label : '1년',
+      unit: useExplicitPeriod ? periodCfg!.unit : ('quarter' as Unit),
+      days,
+      from: fromDate.toISOString().slice(0, 10),
+      to: today.toISOString().slice(0, 10),
+    };
+
     return NextResponse.json({
       timestamp: new Date().toISOString(),
       totalCount: filtered.length,
       distribution: dist,
       tierCounts,
       engineScores: useEngineScores,
+      dataSource: 'local',
+      periodInfo,
       data: sorted,
     });
   } catch (error) {

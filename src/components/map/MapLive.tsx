@@ -8,7 +8,7 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid,
   ReferenceLine, ReferenceArea, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { fetchScores, ScoreItem, formatMoney, deriveTier, isPreferredStock } from '@/lib/api';
+import { fetchScores, ScoreItem, PeriodInfo, formatMoney, deriveTier, isPreferredStock } from '@/lib/api';
 import { cachedFetch } from '@/lib/swrCache';
 import { useFavorites } from '@/lib/useFavorites';
 import { useHoldings } from '@/lib/useHoldings';
@@ -16,6 +16,38 @@ import { useHoldings } from '@/lib/useHoldings';
 type MarketKey = 'all' | 'kospi' | 'kosdaq' | 'us';
 type TierKey = 'all' | '초대형주' | '대형주' | '중형주' | '소형주' | '미국주식';
 type ProfitKey = 'all' | 'profit' | 'p10' | 'p50' | 'p100';
+type Unit = 'quarter' | 'annual';
+type PeriodKey = 'q3m' | 'q6m' | 'q9m' | 'q1y' | 'q1.5y' | 'a1y' | 'a2y' | 'a3y';
+type Metric = 'ni' | 'op';
+
+const METRICS: { key: Metric; label: string }[] = [
+  { key: 'ni', label: '순이익' },
+  { key: 'op', label: '영업이익' },
+];
+
+const UNITS: { key: Unit; label: string }[] = [
+  { key: 'quarter', label: '분기' },
+  { key: 'annual',  label: '연도' },
+];
+
+const PERIODS_QUARTER: { key: PeriodKey; label: string }[] = [
+  { key: 'q3m',   label: '3개월' },
+  { key: 'q6m',   label: '6개월' },
+  { key: 'q9m',   label: '9개월' },
+  { key: 'q1y',   label: '1년' },
+  { key: 'q1.5y', label: '1.5년' },
+];
+
+const PERIODS_ANNUAL: { key: PeriodKey; label: string }[] = [
+  { key: 'a1y', label: '1년' },
+  { key: 'a2y', label: '2년' },
+  { key: 'a3y', label: '3년' },
+];
+
+const DEFAULT_PERIOD_BY_UNIT: Record<Unit, PeriodKey> = {
+  quarter: 'q1y',
+  annual:  'a1y',
+};
 
 const MARKETS: { key: MarketKey; label: string }[] = [
   { key: 'all', label: '전체' },
@@ -44,17 +76,22 @@ interface Point {
   code: string;
   name: string;
   market: string;
-  x: number;            // niGrowth %
+  x: number;            // 선택 지표 증감율 (% — niGrowth or opGrowth)
   y: number;            // mcapGrowth %
   z: number;            // sqrt(marketCap) — bubble size
   marketCap: number;
+  // 양 지표 모두 보존 (툴팁/색상)
+  niGrowth: number | null;
+  opGrowth: number | null;
   niChange: number | null;
+  opChange: number | null;
   ttmNi: number;
   score: number;
   verdict: string;
   isHolding: boolean;
   isFavorite: boolean;
   isMatch: boolean;     // 검색 매치
+  metric: Metric;       // 현재 X축 어떤 지표인지
 }
 
 const COLORS = {
@@ -81,9 +118,15 @@ function percentile(values: number[], p: number): number {
 
 export function MapLive() {
   const [allData, setAllData] = useState<ScoreItem[]>([]);
+  const [periodInfo, setPeriodInfo] = useState<PeriodInfo | null>(null);
+  const [dataSource, setDataSource] = useState<'local' | 'supabase' | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const router = useRouter();
+  const [unit, setUnit] = useState<Unit>('quarter');
+  const [period, setPeriod] = useState<PeriodKey>('q1y');
+  const [metric, setMetric] = useState<Metric>('ni');
   const [market, setMarket] = useState<MarketKey>('kospi');
   const [tier, setTier] = useState<TierKey>('all');
   const [profit, setProfit] = useState<ProfitKey>('all');
@@ -94,42 +137,64 @@ export function MapLive() {
   const { holdings } = useHoldings();
   const holdingTickers = useMemo(() => new Set(holdings.map(h => h.ticker)), [holdings]);
 
-  // 데이터 prefetch (KR + US)
+  // 데이터 fetch (period 변경 시 재요청, period별 캐시)
   useEffect(() => {
-    const krC = cachedFetch<ScoreItem[]>('scores:kr', () => fetchScores({ limit: 3000 }).then(r => r.data || []).catch(() => []));
-    const usC = cachedFetch<ScoreItem[]>('scores:us', () => fetchScores({ market: 'us', limit: 5000 }).then(r => r.data || []).catch(() => []));
+    let cancelled = false;
+    type Cached = { data: ScoreItem[]; info: PeriodInfo | null; src: 'local' | 'supabase' | null };
+    const krC = cachedFetch<Cached>(`scores:kr:${period}`, async () => {
+      const r = await fetchScores({ limit: 3000, period }).catch(() => ({ data: [] as ScoreItem[], periodInfo: undefined, dataSource: undefined } as { data: ScoreItem[]; periodInfo?: PeriodInfo; dataSource?: 'local' | 'supabase' }));
+      return { data: r.data || [], info: r.periodInfo || null, src: r.dataSource || null };
+    });
+    const usC = cachedFetch<Cached>(`scores:us:${period}`, async () => {
+      const r = await fetchScores({ market: 'us', limit: 5000, period }).catch(() => ({ data: [] as ScoreItem[], periodInfo: undefined, dataSource: undefined } as { data: ScoreItem[]; periodInfo?: PeriodInfo; dataSource?: 'local' | 'supabase' }));
+      return { data: r.data || [], info: r.periodInfo || null, src: r.dataSource || null };
+    });
 
     if (krC.cached || usC.cached) {
-      setAllData([...(krC.cached || []), ...(usC.cached || [])]);
+      setAllData([...(krC.cached?.data || []), ...(usC.cached?.data || [])]);
+      setPeriodInfo(krC.cached?.info || usC.cached?.info || null);
+      setDataSource(krC.cached?.src || usC.cached?.src || null);
       setLoaded(true);
+    } else {
+      setRefreshing(true);
     }
     Promise.all([krC.promise, usC.promise]).then(([kr, us]) => {
-      setAllData([...kr, ...us]);
+      if (cancelled) return;
+      setAllData([...kr.data, ...us.data]);
+      setPeriodInfo(kr.info || us.info);
+      setDataSource(kr.src || us.src);
       setLoaded(true);
+      setRefreshing(false);
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [period]);
 
   // 필터링 + Point 변환
   const points: Point[] = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    // niGrowth 폴백: API의 niGrowth가 null이면 (niChange / |prevNi|) * 100로 계산
-    // prevNi = ttmNetIncome - niChange (TTM 기준 1년전 ≒ 현재 - 증감)
-    const computeNiGrowth = (d: ScoreItem): number | null => {
-      if (d.niGrowth != null && Number.isFinite(d.niGrowth)) return d.niGrowth;
-      const ni = d.ttmNetIncome ?? 0;
-      const ch = d.niChange;
+    // 선택 지표 폴백: API growth가 null이면 (change / |ttm - change|) * 100로 계산
+    const compute = (d: ScoreItem, kind: Metric): number | null => {
+      const apiVal = kind === 'ni' ? d.niGrowth : d.opGrowth;
+      if (apiVal != null && Number.isFinite(apiVal)) return apiVal;
+      const ttm = (kind === 'ni' ? d.ttmNetIncome : d.ttmOp) ?? 0;
+      const ch = kind === 'ni' ? d.niChange : d.opChange;
       if (ch == null) return null;
-      const prev = ni - ch;
+      const prev = ttm - ch;
       if (Math.abs(prev) < 1) return null; // 1억 미만 prev는 폭발적 증감율 노이즈 → 제외
       return (ch / Math.abs(prev)) * 100;
     };
 
     return allData
-      .map(d => ({ ...d, _xv: computeNiGrowth(d) }))
+      .map(d => ({
+        ...d,
+        _niG: compute(d, 'ni'),
+        _opG: compute(d, 'op'),
+      }))
       .filter(d => {
-        if (d._xv == null || d.mcapGrowth == null) return false;
-        if (!Number.isFinite(d._xv) || !Number.isFinite(d.mcapGrowth)) return false;
+        const xv = metric === 'ni' ? d._niG : d._opG;
+        if (xv == null || d.mcapGrowth == null) return false;
+        if (!Number.isFinite(xv) || !Number.isFinite(d.mcapGrowth)) return false;
         if (excludePreferred && isPreferredStock(d.code, d.market)) return false;
 
         // 시장 필터
@@ -165,20 +230,24 @@ export function MapLive() {
           code: d.code,
           name: d.name,
           market: d.market,
-          x: d._xv!,
+          x: (metric === 'ni' ? d._niG : d._opG)!,
           y: d.mcapGrowth!,
           z: Math.sqrt(Math.max(1, d.marketCap || 1)),
           marketCap: d.marketCap,
+          niGrowth: d._niG,
+          opGrowth: d._opG,
           niChange: d.niChange,
+          opChange: d.opChange,
           ttmNi: d.ttmNetIncome,
           score: d.score,
           verdict: d.verdict,
           isHolding: holdingTickers.has(d.code),
           isFavorite: isFavorite(d.code),
           isMatch,
+          metric,
         };
       });
-  }, [allData, market, tier, profit, search, excludePreferred, holdingTickers, favorites, isFavorite]);
+  }, [allData, market, tier, profit, search, excludePreferred, holdingTickers, favorites, isFavorite, metric]);
 
   // 도메인 (이상치 제거 — 5%/95% percentile)
   // 양/음 양쪽이 의미 있어야 하므로 0이 중앙 근처에 오도록 보정
@@ -244,10 +313,55 @@ export function MapLive() {
     );
   }
 
+  // Supabase 환경에서는 'q1y' + 'ni'만 지원 — 다른 옵션 비활성화
+  const isSupabase = dataSource === 'supabase';
+  const disabledUnits = isSupabase ? new Set<Unit>(['annual']) : undefined;
+  const disabledQuarterPeriods = isSupabase
+    ? new Set<PeriodKey>(['q3m', 'q6m', 'q9m', 'q1.5y'])
+    : undefined;
+  const disabledAnnualPeriods = isSupabase
+    ? new Set<PeriodKey>(['a1y', 'a2y', 'a3y'])
+    : undefined;
+  const disabledMetrics = isSupabase ? new Set<Metric>(['op']) : undefined;
+
   return (
     <div className="space-y-3">
+      {isSupabase && (
+        <div
+          className="rounded-lg px-3 py-2 text-[11px] flex items-start gap-2"
+          style={{
+            background: 'rgba(250,204,21,0.06)',
+            border: '1px solid rgba(250,204,21,0.25)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span style={{ color: 'var(--accent-yellow)', fontWeight: 600 }}>ⓘ</span>
+          <span>
+            현재 운영 환경(Supabase)에서는 <b>분기 1년 + 순이익</b> 조합만 지원됩니다. 다른 기간/지표는 brain.db 로컬에서만 작동하며, 데이터 동기화 후 활성화될 예정입니다.
+          </span>
+        </div>
+      )}
+
       {/* 필터 바 */}
       <div className="rounded-xl p-3 space-y-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <FilterRow
+          label="단위"
+          options={UNITS}
+          value={unit}
+          onChange={(v) => {
+            setUnit(v);
+            setPeriod(DEFAULT_PERIOD_BY_UNIT[v]);
+          }}
+          disabledKeys={disabledUnits}
+        />
+        <FilterRow
+          label="기간"
+          options={unit === 'quarter' ? PERIODS_QUARTER : PERIODS_ANNUAL}
+          value={period}
+          onChange={setPeriod}
+          disabledKeys={unit === 'quarter' ? disabledQuarterPeriods : disabledAnnualPeriods}
+        />
+        <FilterRow label="지표" options={METRICS} value={metric} onChange={setMetric} disabledKeys={disabledMetrics} />
         <FilterRow label="시장" options={MARKETS} value={market} onChange={setMarket} />
         <FilterRow label="시가총액" options={TIERS} value={tier} onChange={setTier} />
         <FilterRow label="당기순이익" options={PROFITS} value={profit} onChange={setProfit} />
@@ -256,8 +370,15 @@ export function MapLive() {
             <input type="checkbox" checked={excludePreferred} onChange={e => setExcludePreferred(e.target.checked)} />
             우선주 제외
           </label>
-          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{points.length.toLocaleString()}</span> / {allData.length.toLocaleString()} 종목
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+            {refreshing && <Loader2 size={12} className="animate-spin" />}
+            {periodInfo && (
+              <span>
+                {periodInfo.from} → {periodInfo.to}
+              </span>
+            )}
+            <span>·</span>
+            <span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{points.length.toLocaleString()}</span> / {allData.length.toLocaleString()} 종목</span>
           </div>
         </div>
       </div>
@@ -287,26 +408,26 @@ export function MapLive() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <QuadCard
           label="저평가 발굴"
-          tag="순이익↑ 시총↓"
+          tag={`${metric === 'ni' ? '순이익' : '영업이익'}↑ 시총↓`}
           highlight
           color={COLORS.positive}
           stats={quadStats.gold}
         />
         <QuadCard
           label="추격 위험"
-          tag="순이익↓ 시총↑"
+          tag={`${metric === 'ni' ? '순이익' : '영업이익'}↓ 시총↑`}
           color={COLORS.negative}
           stats={quadStats.risk}
         />
         <QuadCard
           label="정당한 상승"
-          tag="순이익↑ 시총↑"
+          tag={`${metric === 'ni' ? '순이익' : '영업이익'}↑ 시총↑`}
           color={COLORS.neutral}
           stats={quadStats.fair_up}
         />
         <QuadCard
           label="정당한 하락"
-          tag="순이익↓ 시총↓"
+          tag={`${metric === 'ni' ? '순이익' : '영업이익'}↓ 시총↓`}
           color={COLORS.neutral}
           stats={quadStats.fair_down}
         />
@@ -339,7 +460,7 @@ export function MapLive() {
                 tickFormatter={v => `${v >= 0 ? '+' : ''}${Math.round(v)}%`}
                 tick={{ fill: '#9ca3af', fontSize: 11 }}
                 stroke="rgba(255,255,255,0.15)"
-                label={{ value: '순이익 증감율 (%)', position: 'insideBottom', offset: -22, fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: `${metric === 'ni' ? '순이익' : '영업이익'} 증감율 (%)`, position: 'insideBottom', offset: -22, fill: '#9ca3af', fontSize: 11 }}
               />
               <YAxis
                 type="number" dataKey="y" domain={domain.y} allowDataOverflow
@@ -394,7 +515,7 @@ export function MapLive() {
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: COLORS.negative }} /> 적자/감소</span>
           <span className="flex items-center gap-1"><Star size={11} fill={COLORS.gold} stroke={COLORS.goldStroke} /> 보유</span>
           <span className="flex items-center gap-1"><Star size={11} fill="none" stroke={COLORS.gold} /> 관심</span>
-          <span className="ml-auto">크기 = 시가총액 · X={'>'}0 = 순이익 성장 · Y{'<'}0 = 시총 미반영</span>
+          <span className="ml-auto">크기 = 시가총액 · X={'>'}0 = {metric === 'ni' ? '순이익' : '영업이익'} 성장 · Y{'<'}0 = 시총 미반영</span>
         </div>
       </div>
     </div>
@@ -404,12 +525,13 @@ export function MapLive() {
 // ───── 컴포넌트들 ─────
 
 function FilterRow<T extends string>({
-  label, options, value, onChange,
+  label, options, value, onChange, disabledKeys,
 }: {
   label: string;
   options: { key: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  disabledKeys?: Set<T>;
 }) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -417,16 +539,21 @@ function FilterRow<T extends string>({
       <div className="flex items-center gap-1 flex-wrap">
         {options.map(o => {
           const active = value === o.key;
+          const disabled = disabledKeys?.has(o.key) ?? false;
           return (
             <button
               key={o.key}
-              onClick={() => onChange(o.key)}
-              className="px-2.5 py-1 text-[11px] rounded-md cursor-pointer transition-colors"
+              onClick={() => { if (!disabled) onChange(o.key); }}
+              disabled={disabled}
+              title={disabled ? 'Vercel 환경 미지원 — brain.db 로컬에서만 활성화' : undefined}
+              className="px-2.5 py-1 text-[11px] rounded-md transition-colors"
               style={{
                 background: active ? 'rgba(59,130,246,0.15)' : 'transparent',
-                color: active ? '#6ea8fe' : 'var(--text-secondary)',
+                color: disabled ? 'var(--text-muted)' : (active ? '#6ea8fe' : 'var(--text-secondary)'),
                 border: `1px solid ${active ? 'rgba(59,130,246,0.4)' : 'var(--border)'}`,
                 fontWeight: active ? 600 : 400,
+                opacity: disabled ? 0.4 : 1,
+                cursor: disabled ? 'not-allowed' : 'pointer',
               }}
             >
               {o.label}
@@ -499,9 +626,10 @@ function dotRadius(props: DotProps): number {
 
 function dotColor(p: Point | undefined): string {
   if (!p) return COLORS.neutral;
-  if (p.niChange == null) return COLORS.neutral;
-  if (p.niChange > 0) return COLORS.positive;
-  if (p.niChange < 0) return COLORS.negative;
+  const ch = p.metric === 'ni' ? p.niChange : p.opChange;
+  if (ch == null) return COLORS.neutral;
+  if (ch > 0) return COLORS.positive;
+  if (ch < 0) return COLORS.negative;
   return COLORS.neutral;
 }
 
@@ -592,7 +720,15 @@ function MapTooltip({ active, payload }: { active?: boolean; payload?: Array<{ p
       <div className="space-y-0.5" style={{ color: 'var(--text-secondary)' }}>
         <div className="flex justify-between gap-4">
           <span>순이익 증감율</span>
-          <span style={{ color: p.x >= 0 ? COLORS.positive : COLORS.negative, fontWeight: 600 }}>{fmtPct(p.x)}</span>
+          <span style={{ color: (p.niGrowth ?? 0) >= 0 ? COLORS.positive : COLORS.negative, fontWeight: 600 }}>
+            {p.niGrowth == null ? '—' : fmtPct(p.niGrowth)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span>영업이익 증감율</span>
+          <span style={{ color: (p.opGrowth ?? 0) >= 0 ? COLORS.positive : COLORS.negative, fontWeight: 600 }}>
+            {p.opGrowth == null ? '—' : fmtPct(p.opGrowth)}
+          </span>
         </div>
         <div className="flex justify-between gap-4">
           <span>시총 증감율</span>
