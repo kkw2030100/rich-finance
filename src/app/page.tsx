@@ -11,7 +11,7 @@ export default async function HomePage() {
   const topPicks = await getTopPicks(8);
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto">
+    <div className="p-3 sm:p-6 max-w-[1400px] mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
           오늘의 시장
